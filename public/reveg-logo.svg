@@ -1,0 +1,88 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000" width="100%" height="100%">
+  <defs>
+    <!-- 1. Major Radiant Petal: Golden flame with inner white teardrop cutout -->
+    <g id="major-petal">
+      <!-- Outer golden flame contour -->
+      <path d="M 0,-490 C -38,-435 -56,-375 -32,-320 C -20,-288 0,-272 0,-272 C 0,-272 20,-288 32,-320 C 56,-375 38,-435 0,-490 Z" fill="#F8A700" />
+      <!-- Inner crisp white teardrop cutout -->
+      <path d="M 0,-438 C -18,-398 -24,-360 -14,-322 C -7,-294 0,-284 0,-284 C 0,-284 7,-294 14,-322 C 24,-360 18,-398 0,-438 Z" fill="#FFFFFF" />
+    </g>
+
+    <!-- 2. Intermediate Golden Triangular Leaf Wedge -->
+    <g id="minor-spike">
+      <path d="M 0,-386 C -14,-355 -20,-330 -12,-295 C -6,-276 0,-272 0,-272 C 0,-272 6,-276 12,-295 C 20,-330 14,-355 0,-386 Z" fill="#F8A700" />
+    </g>
+  </defs>
+
+  <!-- Clean pure white background canvas -->
+  <rect width="1000" height="1000" fill="#FFFFFF" />
+
+  <!-- Symmetrical Circular Sunburst Crest (Center 500, 500) -->
+  <g transform="translate(500, 500)">
+    <!-- 16 Major Radiant Petals (Every 22.5 deg) -->
+    <g transform="rotate(0)"><use href="#major-petal" /></g>
+    <g transform="rotate(22.5)"><use href="#major-petal" /></g>
+    <g transform="rotate(45)"><use href="#major-petal" /></g>
+    <g transform="rotate(67.5)"><use href="#major-petal" /></g>
+    <g transform="rotate(90)"><use href="#major-petal" /></g>
+    <g transform="rotate(112.5)"><use href="#major-petal" /></g>
+    <g transform="rotate(135)"><use href="#major-petal" /></g>
+    <g transform="rotate(157.5)"><use href="#major-petal" /></g>
+    <g transform="rotate(180)"><use href="#major-petal" /></g>
+    <g transform="rotate(202.5)"><use href="#major-petal" /></g>
+    <g transform="rotate(225)"><use href="#major-petal" /></g>
+    <g transform="rotate(247.5)"><use href="#major-petal" /></g>
+    <g transform="rotate(270)"><use href="#major-petal" /></g>
+    <g transform="rotate(292.5)"><use href="#major-petal" /></g>
+    <g transform="rotate(315)"><use href="#major-petal" /></g>
+    <g transform="rotate(337.5)"><use href="#major-petal" /></g>
+
+    <!-- 16 Minor Intermediate Spikes (Offset by 11.25 deg) -->
+    <g transform="rotate(11.25)"><use href="#minor-spike" /></g>
+    <g transform="rotate(33.75)"><use href="#minor-spike" /></g>
+    <g transform="rotate(56.25)"><use href="#minor-spike" /></g>
+    <g transform="rotate(78.75)"><use href="#minor-spike" /></g>
+    <g transform="rotate(101.25)"><use href="#minor-spike" /></g>
+    <g transform="rotate(123.75)"><use href="#minor-spike" /></g>
+    <g transform="rotate(146.25)"><use href="#minor-spike" /></g>
+    <g transform="rotate(168.75)"><use href="#minor-spike" /></g>
+    <g transform="rotate(191.25)"><use href="#minor-spike" /></g>
+    <g transform="rotate(213.75)"><use href="#minor-spike" /></g>
+    <g transform="rotate(236.25)"><use href="#minor-spike" /></g>
+    <g transform="rotate(258.75)"><use href="#minor-spike" /></g>
+    <g transform="rotate(281.25)"><use href="#minor-spike" /></g>
+    <g transform="rotate(303.75)"><use href="#minor-spike" /></g>
+    <g transform="rotate(326.25)"><use href="#minor-spike" /></g>
+    <g transform="rotate(348.75)"><use href="#minor-spike" /></g>
+
+    <!-- Outer Yellow Ring -->
+    <circle cx="0" cy="0" r="275" fill="none" stroke="#F8A700" stroke-width="4.5" />
+
+    <!-- Inner White Filled Disc with Crisp Dark Green Border -->
+    <circle cx="0" cy="0" r="265" fill="#FFFFFF" stroke="#006424" stroke-width="8.5" />
+  </g>
+
+  <!-- Central Brand Logotype & Graphical Leaf Detail -->
+  <g id="brand-core">
+    <!-- Main Brand Name: "Re" in Green, "veg" in Orange -->
+    <text x="495" y="560" text-anchor="middle" font-family="'Plus Jakarta Sans', 'Outfit', 'Montserrat', 'Arial Black', sans-serif" font-weight="900" font-size="192" letter-spacing="-3">
+      <tspan fill="#006424">Re</tspan><tspan fill="#E8590C">veg</tspan>
+    </text>
+
+    <!-- Natural Leaf sprouting from top-right of 'g' -->
+    <g transform="translate(808, 432) rotate(-34)">
+      <!-- Deep Green Leaf Blade -->
+      <path d="M 0,0 C 46,-62 104,-54 122,-20 C 134,22 96,78 38,78 C 4,78 -8,36 0,0 Z" fill="#006424" />
+      <!-- White Central Spine Curve -->
+      <path d="M 6,2 C 34,20 68,26 108,10" fill="none" stroke="#FFFFFF" stroke-width="5" stroke-linecap="round" />
+    </g>
+
+    <!-- "FRESH FOODS" in Uppercase Dark Green (#006424) -->
+    <text x="500" y="692" font-family="'Plus Jakarta Sans', 'Outfit', 'Montserrat', 'Arial Black', sans-serif" font-weight="800" font-size="44" fill="#006424" letter-spacing="8.5" text-anchor="middle">
+      FRESH FOODS
+    </text>
+
+    <!-- Golden Horizontal Baseline Underline -->
+    <line x1="228" y1="728" x2="772" y2="728" stroke="#F8A700" stroke-width="5.5" stroke-linecap="round" />
+  </g>
+</svg>

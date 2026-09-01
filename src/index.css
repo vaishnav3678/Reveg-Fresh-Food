@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --brand-green: #0D5B29;
+    --brand-green-dark: #083E1B;
+    --brand-green-light: #13753D;
+    --brand-orange: #E8590C;
+    --brand-orange-hover: #CC4B04;
+    --brand-yellow: #F5A800;
+    --brand-yellow-light: #FBBF24;
+    --brand-cream: #FAF8F2;
+    --brand-card: #FFFFFF;
+    --brand-dark: #122117;
+  }
+}
+
+.font-cinzel {
+  font-family: 'Cinzel', serif;
+}
+
+.font-outfit {
+  font-family: 'Outfit', sans-serif;
+}
+
+.font-jakarta {
+  font-family: 'Plus Jakarta Sans', sans-serif;
+}
+
+/* Custom festive & fresh green patterns */
+.bg-brand-pattern {
+  background-color: #083E1B;
+  background-image: radial-gradient(rgba(245, 168, 0, 0.16) 1.5px, transparent 1.5px), radial-gradient(rgba(232, 89, 12, 0.12) 1.5px, #083E1B 1.5px);
+  background-size: 24px 24px;
+  background-position: 0 0, 12px 12px;
+}
+
+.bg-cream-fresh-pattern {
+  background-color: #FAF8F2;
+  background-image: radial-gradient(rgba(13, 91, 41, 0.06) 1.2px, transparent 1.2px);
+  background-size: 20px 20px;
+}
+
+/* Golden & green glow accents */
+.gold-glow {
+  box-shadow: 0 4px 20px -2px rgba(245, 168, 0, 0.3);
+}
+
+.green-glow {
+  box-shadow: 0 4px 20px -2px rgba(13, 91, 41, 0.25);
+}
+
+.orange-glow {
+  box-shadow: 0 4px 20px -2px rgba(232, 89, 12, 0.3);
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: #F1ECE0;
+}
+::-webkit-scrollbar-thumb {
+  background: #0D5B29;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #E8590C;
+}

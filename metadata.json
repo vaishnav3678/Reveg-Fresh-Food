@@ -1,0 +1,6 @@
+{
+  "name": "RevEg Fresh Foods",
+  "description": "Authentic traditional Indian sweets, festive faral favourites, crunchy namkeen and custom celebration gift boxes freshly made with purity and homemade taste by RevEg Fresh Foods.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
