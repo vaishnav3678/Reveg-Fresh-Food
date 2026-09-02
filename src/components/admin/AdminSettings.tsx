@@ -3,6 +3,7 @@ import { PhoneCall, MessageCircle, Save, Globe, Clock, MapPin, Mail, Sparkles, C
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { SiteSettings } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminSettingsProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,22 +12,25 @@ interface AdminSettingsProps {
 export const AdminSettings: React.FC<AdminSettingsProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [settings, setSettings] = useState<SiteSettings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [settings, setSettings] = useState<SiteSettings | null>(() => getStoredSiteData().settings);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchSettings = async () => {
+    const local = getStoredSiteData().settings;
+    setSettings(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/settings');
       if (res.ok) {
         const data = await res.json();
-        setSettings(data);
+        if (data) {
+          setSettings(data);
+          saveStoredSiteData({ settings: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -40,17 +44,18 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      const res = await authFetch('/api/settings', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(settings),
-      });
+      saveStoredSiteData({ settings });
+      showToast('success', 'Contact & WhatsApp settings updated across the entire website');
+      await refreshData();
 
-      if (res.ok) {
-        showToast('success', 'Contact & WhatsApp settings updated across the entire website');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save settings');
+      try {
+        await authFetch('/api/settings', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(settings),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving settings');

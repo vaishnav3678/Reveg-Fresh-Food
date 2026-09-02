@@ -3,6 +3,7 @@ import { Home, ArrowUp, ArrowDown, Eye, EyeOff, Save, CheckCircle, Sparkles, Lay
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { SectionConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminHomepageProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,22 +12,29 @@ interface AdminHomepageProps {
 export const AdminHomepage: React.FC<AdminHomepageProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [sections, setSections] = useState<SectionConfig[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [sections, setSections] = useState<SectionConfig[]>(() => {
+    const raw = getStoredSiteData().sections || [];
+    return [...raw].sort((a, b) => a.sortOrder - b.sortOrder);
+  });
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchSections = async () => {
+    const local = getStoredSiteData().sections || [];
+    setSections([...local].sort((a, b) => a.sortOrder - b.sortOrder));
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/sections');
       if (res.ok) {
         const data: SectionConfig[] = await res.json();
-        setSections(data.sort((a, b) => a.sortOrder - b.sortOrder));
+        if (Array.isArray(data) && data.length > 0) {
+          const sorted = data.sort((a, b) => a.sortOrder - b.sortOrder);
+          setSections(sorted);
+          saveStoredSiteData({ sections: sorted });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -66,17 +74,18 @@ export const AdminHomepage: React.FC<AdminHomepageProps> = ({ showToast }) => {
   const handleSaveSections = async () => {
     try {
       setIsSaving(true);
-      const res = await authFetch('/api/sections', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(sections),
-      });
+      saveStoredSiteData({ sections });
+      showToast('success', 'Homepage sections and order updated successfully');
+      await refreshData();
 
-      if (res.ok) {
-        showToast('success', 'Homepage sections and order updated successfully');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save section order');
+      try {
+        await authFetch('/api/sections', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(sections),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving sections');

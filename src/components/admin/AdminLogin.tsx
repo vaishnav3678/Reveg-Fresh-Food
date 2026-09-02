@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Lock, User, Eye, EyeOff, ShieldCheck, ArrowLeft, Sparkles, AlertCircle } from 'lucide-react';
+import { Lock, User, Eye, EyeOff, ShieldCheck, ArrowLeft, AlertCircle } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 
 interface AdminLoginProps {
@@ -8,8 +8,8 @@ interface AdminLoginProps {
 
 export const AdminLogin: React.FC<AdminLoginProps> = ({ onBackToSite }) => {
   const { login } = useAdminAuth();
-  const [username, setUsername] = useState('admin');
-  const [password, setPassword] = useState('admin123');
+  const [username, setUsername] = useState('');
+  const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +88,7 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onBackToSite }) => {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                placeholder="admin"
+                placeholder="Enter username"
                 className="w-full pl-10 pr-4 py-3 bg-[#FAF8F2] border border-[#D5E8DA] rounded-xl text-sm font-medium text-[#11311D] focus:outline-none focus:ring-2 focus:ring-[#0D5B29] focus:bg-white transition-all"
               />
             </div>
@@ -120,24 +120,6 @@ export const AdminLogin: React.FC<AdminLoginProps> = ({ onBackToSite }) => {
                 {showPassword ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
               </button>
             </div>
-          </div>
-
-          {/* Quick Demo Credentials Hint */}
-          <div className="p-3 rounded-xl bg-[#EBF5EE] border border-[#BCE5C8] text-[11px] text-[#1E4D2B] flex items-center justify-between">
-            <div>
-              <span className="font-bold">Default Credentials:</span> <br />
-              <span className="text-[#0D5B29] font-mono">admin / admin123</span>
-            </div>
-            <button
-              type="button"
-              onClick={() => {
-                setUsername('admin');
-                setPassword('admin123');
-              }}
-              className="text-[10px] bg-[#0D5B29] text-white px-2.5 py-1 rounded-lg font-bold hover:bg-[#083E1B]"
-            >
-              Fill Demo
-            </button>
           </div>
 
           <button

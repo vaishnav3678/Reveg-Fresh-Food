@@ -3,6 +3,7 @@ import { Search, Save, Globe } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { SeoSettings } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminSeoProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,22 +12,25 @@ interface AdminSeoProps {
 export const AdminSeo: React.FC<AdminSeoProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [seo, setSeo] = useState<SeoSettings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [seo, setSeo] = useState<SeoSettings | null>(() => getStoredSiteData().seo);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchSeo = async () => {
+    const local = getStoredSiteData().seo;
+    setSeo(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/seo');
       if (res.ok) {
         const data = await res.json();
-        setSeo(data);
+        if (data) {
+          setSeo(data);
+          saveStoredSiteData({ seo: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -40,17 +44,18 @@ export const AdminSeo: React.FC<AdminSeoProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      const res = await authFetch('/api/seo', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(seo),
-      });
+      saveStoredSiteData({ seo });
+      showToast('success', 'SEO & Meta tags updated successfully');
+      await refreshData();
 
-      if (res.ok) {
-        showToast('success', 'SEO & Meta tags updated successfully');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save SEO settings');
+      try {
+        await authFetch('/api/seo', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(seo),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving SEO settings');

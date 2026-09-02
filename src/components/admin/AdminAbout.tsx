@@ -3,6 +3,7 @@ import { Info, Save, Plus, X, Sparkles } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { AboutConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminAboutProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,23 +12,26 @@ interface AdminAboutProps {
 export const AdminAbout: React.FC<AdminAboutProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [about, setAbout] = useState<AboutConfig | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [about, setAbout] = useState<AboutConfig | null>(() => getStoredSiteData().about);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [newValue, setNewValue] = useState('');
 
   const fetchAbout = async () => {
+    const local = getStoredSiteData().about;
+    setAbout(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/about');
       if (res.ok) {
         const data = await res.json();
-        setAbout(data);
+        if (data) {
+          setAbout(data);
+          saveStoredSiteData({ about: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -41,17 +45,18 @@ export const AdminAbout: React.FC<AdminAboutProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      const res = await authFetch('/api/about', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(about),
-      });
+      saveStoredSiteData({ about });
+      showToast('success', 'About & Heritage content updated and live');
+      await refreshData();
 
-      if (res.ok) {
-        showToast('success', 'About & Heritage content updated successfully');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save about section');
+      try {
+        await authFetch('/api/about', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(about),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving about details');

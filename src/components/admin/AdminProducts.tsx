@@ -20,6 +20,7 @@ import {
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { ProductItem } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminProductsProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -28,8 +29,10 @@ interface AdminProductsProps {
 export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [products, setProducts] = useState<ProductItem[]>([]);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [products, setProducts] = useState<ProductItem[]>(() => {
+    return getStoredSiteData().products || [];
+  });
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [categoryFilter, setCategoryFilter] = useState<string>('all');
   const [statusFilter, setStatusFilter] = useState<string>('all');
@@ -76,18 +79,20 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
   const [newIngredient, setNewIngredient] = useState('');
 
   const fetchProducts = async () => {
+    const local = getStoredSiteData().products || [];
+    setProducts(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/products');
       if (res.ok) {
         const data = await res.json();
-        setProducts(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setProducts(data);
+          saveStoredSiteData({ products: data });
+        }
       }
-    } catch (err) {
-      console.error('Failed to fetch products:', err);
-      showToast('error', 'Failed to load products');
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Backend not running (static deployment) -> localStore is authoritative
     }
   };
 
@@ -146,28 +151,64 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      let res: Response;
+      const currentList = getStoredSiteData().products || [];
+      let updatedList: ProductItem[];
+
       if (editingProduct) {
-        res = await authFetch(`/api/products/${editingProduct.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
+        updatedList = currentList.map((p) =>
+          p.id === editingProduct.id
+            ? {
+                ...p,
+                ...formData,
+              }
+            : p
+        );
       } else {
-        res = await authFetch('/api/products', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
+        const newProd: ProductItem = {
+          id: `prod_${Date.now()}`,
+          name: formData.name,
+          category: formData.category,
+          secondaryCategories: formData.secondaryCategories,
+          description: formData.description,
+          detailedDescription: formData.detailedDescription,
+          image: formData.image,
+          isPopular: formData.isPopular,
+          isFestiveSpecial: formData.isFestiveSpecial,
+          packSizes: formData.packSizes,
+          tasteProfile: formData.tasteProfile,
+          ingredientsHighlight: formData.ingredientsHighlight,
+          texture: formData.texture,
+          priceGuide: formData.priceGuide,
+          status: formData.status,
+          sortOrder: currentList.length + 1,
+        };
+        updatedList = [newProd, ...currentList];
       }
 
-      if (res.ok) {
-        showToast('success', editingProduct ? 'Product updated successfully' : 'Product added successfully');
-        setIsModalOpen(false);
-        await fetchProducts();
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save product');
+      // Save immediately to static storage & trigger site sync
+      saveStoredSiteData({ products: updatedList });
+      setProducts(updatedList);
+      showToast('success', editingProduct ? 'Product updated successfully' : 'Product added successfully');
+      setIsModalOpen(false);
+      await refreshData();
+
+      // Optional backend sync if server exists
+      try {
+        if (editingProduct) {
+          await authFetch(`/api/products/${editingProduct.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+          });
+        } else {
+          await authFetch('/api/products', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+          });
+        }
+      } catch {
+        // Ignored in static mode
       }
     } catch (err) {
       console.error('Error saving product:', err);
@@ -181,13 +222,17 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
     if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
 
     try {
-      const res = await authFetch(`/api/products/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        showToast('success', `"${name}" removed from catalogue`);
-        await fetchProducts();
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to delete product');
+      const currentList = getStoredSiteData().products || [];
+      const updatedList = currentList.filter((p) => p.id !== id);
+      saveStoredSiteData({ products: updatedList });
+      setProducts(updatedList);
+      showToast('success', `"${name}" removed from catalogue`);
+      await refreshData();
+
+      try {
+        await authFetch(`/api/products/${id}`, { method: 'DELETE' });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error deleting product');
@@ -197,15 +242,21 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
   const handleToggleStatus = async (product: ProductItem) => {
     const nextStatus = product.status === 'active' ? 'inactive' : 'active';
     try {
-      const res = await authFetch(`/api/products/${product.id}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ status: nextStatus }),
-      });
-      if (res.ok) {
-        showToast('info', `${product.name} is now ${nextStatus}`);
-        await fetchProducts();
-        await refreshData();
+      const currentList = getStoredSiteData().products || [];
+      const updatedList = currentList.map((p) => (p.id === product.id ? { ...p, status: nextStatus as any } : p));
+      saveStoredSiteData({ products: updatedList });
+      setProducts(updatedList);
+      showToast('info', `${product.name} is now ${nextStatus}`);
+      await refreshData();
+
+      try {
+        await authFetch(`/api/products/${product.id}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ status: nextStatus }),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Failed to update status');

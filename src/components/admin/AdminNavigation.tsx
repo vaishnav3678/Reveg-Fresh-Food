@@ -3,6 +3,7 @@ import { Compass, Plus, Trash2, Save, ArrowUp, ArrowDown, Eye, EyeOff } from 'lu
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { NavigationConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminNavigationProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,22 +12,25 @@ interface AdminNavigationProps {
 export const AdminNavigation: React.FC<AdminNavigationProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [nav, setNav] = useState<NavigationConfig | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [nav, setNav] = useState<NavigationConfig | null>(() => getStoredSiteData().navigation);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchNav = async () => {
+    const local = getStoredSiteData().navigation;
+    setNav(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/navigation');
       if (res.ok) {
         const data = await res.json();
-        setNav(data);
+        if (data) {
+          setNav(data);
+          saveStoredSiteData({ navigation: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -38,17 +42,18 @@ export const AdminNavigation: React.FC<AdminNavigationProps> = ({ showToast }) =
     if (!nav) return;
     try {
       setIsSaving(true);
-      const res = await authFetch('/api/navigation', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(nav),
-      });
+      saveStoredSiteData({ navigation: nav });
+      showToast('success', 'Header navigation updated successfully');
+      await refreshData();
 
-      if (res.ok) {
-        showToast('success', 'Header navigation updated successfully');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save navigation');
+      try {
+        await authFetch('/api/navigation', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(nav),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving navigation');

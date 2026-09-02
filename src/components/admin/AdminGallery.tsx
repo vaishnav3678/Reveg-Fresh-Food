@@ -3,6 +3,7 @@ import { Camera, Plus, Edit2, Trash2, Save, X, Eye, EyeOff } from 'lucide-react'
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { GalleryItemRecord } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminGalleryProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,10 +12,10 @@ interface AdminGalleryProps {
 export const AdminGallery: React.FC<AdminGalleryProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [gallery, setGallery] = useState<GalleryItemRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [gallery, setGallery] = useState<GalleryItemRecord[]>(() => getStoredSiteData().gallery || []);
+  const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
-  const [editingItem, setEditingItem] = useState<GalleryItemRecord[] | any>(null);
+  const [editingItem, setEditingItem] = useState<GalleryItemRecord | null>(null);
   const [isSaving, setIsSaving] = useState(false);
   const [filterCat, setFilterCat] = useState('all');
 
@@ -33,17 +34,20 @@ export const AdminGallery: React.FC<AdminGalleryProps> = ({ showToast }) => {
   });
 
   const fetchGallery = async () => {
+    const local = getStoredSiteData().gallery || [];
+    setGallery(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/gallery');
       if (res.ok) {
         const data = await res.json();
-        setGallery(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setGallery(data);
+          saveStoredSiteData({ gallery: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -84,28 +88,48 @@ export const AdminGallery: React.FC<AdminGalleryProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      let res: Response;
+      const current = getStoredSiteData().gallery || [];
+      let updated: GalleryItemRecord[];
+
       if (editingItem) {
-        res = await authFetch(`/api/gallery/${editingItem.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
+        updated = current.map((g) =>
+          g.id === editingItem.id ? { ...g, ...formData } : g
+        );
       } else {
-        res = await authFetch('/api/gallery', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
+        const newItem: GalleryItemRecord = {
+          id: `gal_${Date.now()}`,
+          title: formData.title,
+          category: formData.category,
+          image: formData.image,
+          description: formData.description,
+          isEnabled: formData.isEnabled,
+          sortOrder: current.length + 1,
+        };
+        updated = [...current, newItem];
       }
 
-      if (res.ok) {
-        showToast('success', editingItem ? 'Gallery item updated' : 'Photo added to gallery');
-        setIsModalOpen(false);
-        await fetchGallery();
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save photo');
+      saveStoredSiteData({ gallery: updated });
+      setGallery(updated);
+      showToast('success', editingItem ? 'Gallery item updated' : 'Photo added to gallery');
+      setIsModalOpen(false);
+      await refreshData();
+
+      try {
+        if (editingItem) {
+          await authFetch(`/api/gallery/${editingItem.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+          });
+        } else {
+          await authFetch('/api/gallery', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+          });
+        }
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving photo');
@@ -117,11 +141,17 @@ export const AdminGallery: React.FC<AdminGalleryProps> = ({ showToast }) => {
   const handleDelete = async (id: string, title: string) => {
     if (!window.confirm(`Delete "${title}"?`)) return;
     try {
-      const res = await authFetch(`/api/gallery/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        showToast('success', 'Photo removed');
-        await fetchGallery();
-        await refreshData();
+      const current = getStoredSiteData().gallery || [];
+      const updated = current.filter((g) => g.id !== id);
+      saveStoredSiteData({ gallery: updated });
+      setGallery(updated);
+      showToast('success', 'Photo removed');
+      await refreshData();
+
+      try {
+        await authFetch(`/api/gallery/${id}`, { method: 'DELETE' });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Failed to delete photo');

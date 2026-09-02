@@ -3,6 +3,7 @@ import { Layers, Plus, Edit2, Trash2, Save, X, Sparkles, Check } from 'lucide-re
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { CategoryItem } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminCategoriesProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,8 +12,8 @@ interface AdminCategoriesProps {
 export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [categories, setCategories] = useState<CategoryItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [categories, setCategories] = useState<CategoryItem[]>(() => getStoredSiteData().categories || []);
+  const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryItem | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -36,17 +37,20 @@ export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) =
   });
 
   const fetchCategories = async () => {
+    const local = getStoredSiteData().categories || [];
+    setCategories(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/categories');
       if (res.ok) {
         const data = await res.json();
-        setCategories(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setCategories(data);
+          saveStoredSiteData({ categories: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -91,33 +95,53 @@ export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) =
 
     try {
       setIsSaving(true);
-      const payload = {
-        ...formData,
-        slug: formData.slug || formData.name.toLowerCase().replace(/\s+/g, '-'),
-      };
+      const current = getStoredSiteData().categories || [];
+      const slug = formData.slug || formData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      let updated: CategoryItem[];
 
-      let res: Response;
       if (editingCategory) {
-        res = await authFetch(`/api/categories/${editingCategory.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+        updated = current.map((c) =>
+          c.id === editingCategory.id ? { ...c, ...formData, slug } : c
+        );
       } else {
-        res = await authFetch('/api/categories', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
+        const newCat: CategoryItem = {
+          id: `cat_${Date.now()}`,
+          name: formData.name,
+          slug,
+          tagline: formData.tagline,
+          description: formData.description,
+          badge: formData.badge,
+          iconName: formData.iconName,
+          items: [],
+          sampleProducts: [],
+          status: formData.status,
+          sortOrder: current.length + 1,
+        };
+        updated = [...current, newCat];
       }
 
-      if (res.ok) {
-        showToast('success', editingCategory ? 'Category updated' : 'Category created');
-        setIsModalOpen(false);
-        await fetchCategories();
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save category');
+      saveStoredSiteData({ categories: updated });
+      setCategories(updated);
+      showToast('success', editingCategory ? 'Category updated' : 'Category created');
+      setIsModalOpen(false);
+      await refreshData();
+
+      try {
+        if (editingCategory) {
+          await authFetch(`/api/categories/${editingCategory.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...formData, slug }),
+          });
+        } else {
+          await authFetch('/api/categories', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ...formData, slug }),
+          });
+        }
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving category');
@@ -129,11 +153,17 @@ export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) =
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete category "${name}"?`)) return;
     try {
-      const res = await authFetch(`/api/categories/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        showToast('success', `Category "${name}" deleted`);
-        await fetchCategories();
-        await refreshData();
+      const current = getStoredSiteData().categories || [];
+      const updated = current.filter((c) => c.id !== id);
+      saveStoredSiteData({ categories: updated });
+      setCategories(updated);
+      showToast('success', `Category "${name}" deleted`);
+      await refreshData();
+
+      try {
+        await authFetch(`/api/categories/${id}`, { method: 'DELETE' });
+      } catch {
+        // Static mode
       }
     } catch (e) {
       showToast('error', 'Failed to delete');

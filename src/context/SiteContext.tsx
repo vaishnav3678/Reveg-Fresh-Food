@@ -12,8 +12,9 @@ import {
   TestimonialRecord,
   NavigationConfig,
   FooterConfig,
-  EnquiryRecord,
+  MediaItem,
 } from '../server/db';
+import { getStoredSiteData, saveStoredSiteData } from '../utils/localStore';
 
 export interface PublicSiteData {
   settings: SiteSettings;
@@ -28,6 +29,7 @@ export interface PublicSiteData {
   testimonials: TestimonialRecord[];
   navigation: NavigationConfig;
   footer: FooterConfig;
+  media?: MediaItem[];
 }
 
 interface SiteContextType {
@@ -35,14 +37,7 @@ interface SiteContextType {
   isLoading: boolean;
   error: string | null;
   refreshData: () => Promise<void>;
-  submitEnquiry: (formData: {
-    name: string;
-    email?: string;
-    phone?: string;
-    inquiryType: string;
-    packSize?: string;
-    message: string;
-  }) => Promise<{ success: boolean; enquiry?: EnquiryRecord; error?: string }>;
+  updateSiteData: (updated: Partial<PublicSiteData>) => void;
   getWhatsAppUrl: (message: string) => string;
   isSectionEnabled: (sectionId: string) => boolean;
 }
@@ -50,62 +45,98 @@ interface SiteContextType {
 const SiteContext = createContext<SiteContextType | undefined>(undefined);
 
 export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [data, setData] = useState<PublicSiteData | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [data, setData] = useState<PublicSiteData | null>(() => getStoredSiteData());
+  const [isLoading, setIsLoading] = useState<boolean>(false);
   const [error, setError] = useState<string | null>(null);
 
-  const fetchSiteData = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      const res = await fetch('/api/public-content');
-      if (!res.ok) {
-        throw new Error(`Failed to load website content (${res.status})`);
+  const applyDomSettings = useCallback((siteData: PublicSiteData) => {
+    // Apply dynamic SEO title and meta
+    if (siteData.seo) {
+      if (siteData.seo.title) document.title = siteData.seo.title;
+      const metaDesc = document.querySelector('meta[name="description"]');
+      if (metaDesc && siteData.seo.description) {
+        metaDesc.setAttribute('content', siteData.seo.description);
       }
-      const json: PublicSiteData = await res.json();
-      setData(json);
-      setError(null);
+      const ogTitle = document.querySelector('meta[property="og:title"]');
+      if (ogTitle && siteData.seo.ogTitle) {
+        ogTitle.setAttribute('content', siteData.seo.ogTitle);
+      }
+      const ogDesc = document.querySelector('meta[property="og:description"]');
+      if (ogDesc && siteData.seo.ogDescription) {
+        ogDesc.setAttribute('content', siteData.seo.ogDescription);
+      }
+    }
 
-      // Apply dynamic SEO title and meta
-      if (json.seo) {
-        if (json.seo.title) document.title = json.seo.title;
-        const metaDesc = document.querySelector('meta[name="description"]');
-        if (metaDesc && json.seo.description) {
-          metaDesc.setAttribute('content', json.seo.description);
-        }
-        const ogTitle = document.querySelector('meta[property="og:title"]');
-        if (ogTitle && json.seo.ogTitle) {
-          ogTitle.setAttribute('content', json.seo.ogTitle);
-        }
-        const ogDesc = document.querySelector('meta[property="og:description"]');
-        if (ogDesc && json.seo.ogDescription) {
-          ogDesc.setAttribute('content', json.seo.ogDescription);
-        }
-      }
-
-      // Apply dynamic CSS variables for theme customization
-      if (json.theme) {
-        const root = document.documentElement;
-        if (json.theme.primaryColor) root.style.setProperty('--brand-green', json.theme.primaryColor);
-        if (json.theme.primaryDark) root.style.setProperty('--brand-green-dark', json.theme.primaryDark);
-        if (json.theme.primaryLight) root.style.setProperty('--brand-green-light', json.theme.primaryLight);
-        if (json.theme.orangeColor) root.style.setProperty('--brand-orange', json.theme.orangeColor);
-        if (json.theme.orangeHover) root.style.setProperty('--brand-orange-hover', json.theme.orangeHover);
-        if (json.theme.yellowColor) root.style.setProperty('--brand-yellow', json.theme.yellowColor);
-        if (json.theme.creamBg) root.style.setProperty('--brand-cream', json.theme.creamBg);
-        if (json.theme.cardBg) root.style.setProperty('--brand-card', json.theme.cardBg);
-        if (json.theme.textColor) root.style.setProperty('--brand-dark', json.theme.textColor);
-      }
-    } catch (err: any) {
-      console.error('[SiteContext] Error fetching site data:', err);
-      setError(err.message || 'Failed to load site data');
-    } finally {
-      setIsLoading(false);
+    // Apply dynamic CSS variables for theme customization
+    if (siteData.theme) {
+      const root = document.documentElement;
+      if (siteData.theme.primaryColor) root.style.setProperty('--brand-green', siteData.theme.primaryColor);
+      if (siteData.theme.primaryDark) root.style.setProperty('--brand-green-dark', siteData.theme.primaryDark);
+      if (siteData.theme.primaryLight) root.style.setProperty('--brand-green-light', siteData.theme.primaryLight);
+      if (siteData.theme.orangeColor) root.style.setProperty('--brand-orange', siteData.theme.orangeColor);
+      if (siteData.theme.orangeHover) root.style.setProperty('--brand-orange-hover', siteData.theme.orangeHover);
+      if (siteData.theme.yellowColor) root.style.setProperty('--brand-yellow', siteData.theme.yellowColor);
+      if (siteData.theme.creamBg) root.style.setProperty('--brand-cream', siteData.theme.creamBg);
+      if (siteData.theme.cardBg) root.style.setProperty('--brand-card', siteData.theme.cardBg);
+      if (siteData.theme.textColor) root.style.setProperty('--brand-dark', siteData.theme.textColor);
     }
   }, []);
 
+  const fetchSiteData = useCallback(async () => {
+    // 1. First load from localStorage to guarantee immediate zero-delay display
+    const local = getStoredSiteData();
+    setData(local);
+    applyDomSettings(local);
+
+    // 2. If server API is available, optionally sync
+    try {
+      const res = await fetch('/api/public-content');
+      if (res.ok) {
+        const contentType = res.headers.get('content-type');
+        if (contentType && contentType.includes('application/json')) {
+          const json: PublicSiteData = await res.json();
+          setData(json);
+          applyDomSettings(json);
+          saveStoredSiteData(json);
+        }
+      }
+    } catch {
+      // Backend not running (static deployment) -> perfectly fine, already loaded from localStorage
+    }
+  }, [applyDomSettings]);
+
   useEffect(() => {
     fetchSiteData();
-  }, [fetchSiteData]);
+
+    // Listen for real-time changes saved across the admin panel in the same browser
+    const handleStorageUpdate = (e: any) => {
+      if (e.detail) {
+        setData(e.detail);
+        applyDomSettings(e.detail);
+      } else {
+        const updated = getStoredSiteData();
+        setData(updated);
+        applyDomSettings(updated);
+      }
+    };
+
+    window.addEventListener('reveg_site_data_updated', handleStorageUpdate);
+    window.addEventListener('storage', handleStorageUpdate);
+
+    return () => {
+      window.removeEventListener('reveg_site_data_updated', handleStorageUpdate);
+      window.removeEventListener('storage', handleStorageUpdate);
+    };
+  }, [fetchSiteData, applyDomSettings]);
+
+  const updateSiteData = useCallback(
+    (updated: Partial<PublicSiteData>) => {
+      const saved = saveStoredSiteData(updated);
+      setData(saved);
+      applyDomSettings(saved);
+    },
+    [applyDomSettings]
+  );
 
   // Helper to generate dynamic WhatsApp URL with configured number
   const getWhatsAppUrl = useCallback(
@@ -127,31 +158,6 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     [data?.sections]
   );
 
-  // Submit Enquiry to backend database
-  const submitEnquiry = async (formData: {
-    name: string;
-    email?: string;
-    phone?: string;
-    inquiryType: string;
-    packSize?: string;
-    message: string;
-  }) => {
-    try {
-      const res = await fetch('/api/enquiries', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(formData),
-      });
-      const result = await res.json();
-      if (!res.ok) {
-        return { success: false, error: result.error || 'Failed to submit enquiry' };
-      }
-      return { success: true, enquiry: result.enquiry };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Network error' };
-    }
-  };
-
   return (
     <SiteContext.Provider
       value={{
@@ -159,7 +165,7 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isLoading,
         error,
         refreshData: fetchSiteData,
-        submitEnquiry,
+        updateSiteData,
         getWhatsAppUrl,
         isSectionEnabled,
       }}
@@ -176,3 +182,4 @@ export const useSiteData = () => {
   }
   return context;
 };
+

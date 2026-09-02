@@ -3,6 +3,7 @@ import { Palette, Save, RotateCcw, Sparkles, Check } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { ThemeSettings } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminThemeProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,22 +12,25 @@ interface AdminThemeProps {
 export const AdminTheme: React.FC<AdminThemeProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [theme, setTheme] = useState<ThemeSettings | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [theme, setTheme] = useState<ThemeSettings | null>(() => getStoredSiteData().theme);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchTheme = async () => {
+    const local = getStoredSiteData().theme;
+    setTheme(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/theme');
       if (res.ok) {
         const data = await res.json();
-        setTheme(data);
+        if (data) {
+          setTheme(data);
+          saveStoredSiteData({ theme: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -35,7 +39,7 @@ export const AdminTheme: React.FC<AdminThemeProps> = ({ showToast }) => {
   }, []);
 
   const handleResetToBrand = () => {
-    setTheme({
+    const defaultTheme: ThemeSettings = {
       primaryColor: '#0D5B29',
       primaryDark: '#083E1B',
       primaryLight: '#13753D',
@@ -47,7 +51,10 @@ export const AdminTheme: React.FC<AdminThemeProps> = ({ showToast }) => {
       textColor: '#11311D',
       fontHeading: 'Cinzel Decorative, serif',
       fontBody: 'Plus Jakarta Sans, sans-serif',
-    });
+    };
+    setTheme(defaultTheme);
+    saveStoredSiteData({ theme: defaultTheme });
+    refreshData();
     showToast('info', 'Reset palette to official RevEg logo branding');
   };
 
@@ -57,17 +64,18 @@ export const AdminTheme: React.FC<AdminThemeProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      const res = await authFetch('/api/theme', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(theme),
-      });
+      saveStoredSiteData({ theme });
+      showToast('success', 'Theme & appearance palette saved');
+      await refreshData();
 
-      if (res.ok) {
-        showToast('success', 'Theme & appearance palette saved');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save theme');
+      try {
+        await authFetch('/api/theme', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(theme),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving theme');

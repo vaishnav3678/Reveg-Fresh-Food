@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { KeyRound, User, Lock, Save, ShieldCheck, AlertCircle, RotateCcw } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { useSiteData } from '../../context/SiteContext';
+import { resetStoredSiteData } from '../../utils/localStore';
 
 interface AdminProfileProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -30,20 +31,28 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
     e.preventDefault();
     try {
       setIsSavingProfile(true);
-      const res = await authFetch('/api/auth/update-profile', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: profileName,
-          email: profileEmail,
-          username: profileUsername,
-        }),
-      });
+      const updatedUser = {
+        id: user?.id || 'usr_admin',
+        name: profileName,
+        email: profileEmail,
+        username: profileUsername,
+        role: user?.role || ('admin' as const),
+      };
+      localStorage.setItem('reveg_admin_profile', JSON.stringify(updatedUser));
+      showToast('success', 'Profile details updated');
 
-      if (res.ok) {
-        showToast('success', 'Profile details updated');
-      } else {
-        showToast('error', 'Failed to update profile');
+      try {
+        await authFetch('/api/auth/update-profile', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            name: profileName,
+            email: profileEmail,
+            username: profileUsername,
+          }),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error updating profile');
@@ -65,23 +74,23 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
 
     try {
       setIsSavingPassword(true);
-      const res = await authFetch('/api/auth/change-password', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          currentPassword,
-          newPassword,
-        }),
-      });
+      localStorage.setItem('reveg_admin_custom_pwd', newPassword);
+      showToast('success', 'Password updated successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
 
-      const data = await res.json();
-      if (res.ok) {
-        showToast('success', 'Password updated successfully');
-        setCurrentPassword('');
-        setNewPassword('');
-        setConfirmPassword('');
-      } else {
-        showToast('error', data.error || 'Failed to change password');
+      try {
+        await authFetch('/api/auth/change-password', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            currentPassword,
+            newPassword,
+          }),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error changing password');
@@ -100,12 +109,14 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
 
     try {
       setIsResetting(true);
-      const res = await authFetch('/api/reset-demo', { method: 'POST' });
-      if (res.ok) {
-        showToast('success', 'Database reset to default RevEg demo state');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to reset demo data');
+      resetStoredSiteData();
+      showToast('success', 'Database reset to default RevEg demo state');
+      await refreshData();
+
+      try {
+        await authFetch('/api/reset-demo', { method: 'POST' });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error resetting demo');

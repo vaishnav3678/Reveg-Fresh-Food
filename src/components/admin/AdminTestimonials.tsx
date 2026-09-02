@@ -3,6 +3,7 @@ import { MessageSquareQuote, Plus, Edit2, Trash2, Save, X, Star, CheckCircle2 } 
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { TestimonialRecord } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminTestimonialsProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,8 +12,8 @@ interface AdminTestimonialsProps {
 export const AdminTestimonials: React.FC<AdminTestimonialsProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [testimonials, setTestimonials] = useState<TestimonialRecord[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [testimonials, setTestimonials] = useState<TestimonialRecord[]>(() => getStoredSiteData().testimonials || []);
+  const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTestimonial, setEditingTestimonial] = useState<TestimonialRecord | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -38,17 +39,20 @@ export const AdminTestimonials: React.FC<AdminTestimonialsProps> = ({ showToast 
   });
 
   const fetchTestimonials = async () => {
+    const local = getStoredSiteData().testimonials || [];
+    setTestimonials(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/testimonials');
       if (res.ok) {
         const data = await res.json();
-        setTestimonials(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setTestimonials(data);
+          saveStoredSiteData({ testimonials: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -95,28 +99,52 @@ export const AdminTestimonials: React.FC<AdminTestimonialsProps> = ({ showToast 
 
     try {
       setIsSaving(true);
-      let res: Response;
+      const current = getStoredSiteData().testimonials || [];
+      let updated: TestimonialRecord[];
+
       if (editingTestimonial) {
-        res = await authFetch(`/api/testimonials/${editingTestimonial.id}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
+        updated = current.map((t) =>
+          t.id === editingTestimonial.id ? { ...t, ...formData } : t
+        );
       } else {
-        res = await authFetch('/api/testimonials', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(formData),
-        });
+        const newTestimonial: TestimonialRecord = {
+          id: `test_${Date.now()}`,
+          name: formData.name,
+          designation: formData.designation,
+          location: formData.location,
+          avatar: formData.avatar,
+          rating: formData.rating,
+          comment: formData.comment,
+          event: formData.event,
+          isApproved: formData.isApproved,
+          sortOrder: current.length + 1,
+          createdAt: new Date().toISOString(),
+        };
+        updated = [...current, newTestimonial];
       }
 
-      if (res.ok) {
-        showToast('success', editingTestimonial ? 'Review updated' : 'Review added');
-        setIsModalOpen(false);
-        await fetchTestimonials();
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save review');
+      saveStoredSiteData({ testimonials: updated });
+      setTestimonials(updated);
+      showToast('success', editingTestimonial ? 'Review updated' : 'Review added');
+      setIsModalOpen(false);
+      await refreshData();
+
+      try {
+        if (editingTestimonial) {
+          await authFetch(`/api/testimonials/${editingTestimonial.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+          });
+        } else {
+          await authFetch('/api/testimonials', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(formData),
+          });
+        }
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving review');
@@ -128,11 +156,17 @@ export const AdminTestimonials: React.FC<AdminTestimonialsProps> = ({ showToast 
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete review from "${name}"?`)) return;
     try {
-      const res = await authFetch(`/api/testimonials/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        showToast('success', 'Review deleted');
-        await fetchTestimonials();
-        await refreshData();
+      const current = getStoredSiteData().testimonials || [];
+      const updated = current.filter((t) => t.id !== id);
+      saveStoredSiteData({ testimonials: updated });
+      setTestimonials(updated);
+      showToast('success', 'Review deleted');
+      await refreshData();
+
+      try {
+        await authFetch(`/api/testimonials/${id}`, { method: 'DELETE' });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Failed to delete');

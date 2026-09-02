@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Image as ImageIcon, Upload, Trash2, Copy, Check, ExternalLink, Plus } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { MediaItem } from '../../server/db';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminMediaProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -9,24 +10,27 @@ interface AdminMediaProps {
 
 export const AdminMedia: React.FC<AdminMediaProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const [mediaList, setMediaList] = useState<MediaItem[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
+  const [mediaList, setMediaList] = useState<MediaItem[]>(() => getStoredSiteData().media || []);
+  const [isLoading, setIsLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchMedia = async () => {
+    const local = getStoredSiteData().media || [];
+    setMediaList(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/media');
       if (res.ok) {
         const data = await res.json();
-        setMediaList(data);
+        if (Array.isArray(data) && data.length > 0) {
+          setMediaList(data);
+          saveStoredSiteData({ media: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -40,22 +44,41 @@ export const AdminMedia: React.FC<AdminMediaProps> = ({ showToast }) => {
 
     try {
       setIsUploading(true);
-      const formData = new FormData();
-      formData.append('image', file);
-      formData.append('name', file.name);
 
-      const res = await authFetch('/api/media/upload', {
-        method: 'POST',
-        body: formData,
-      });
+      // Convert to base64 for instant client-side offline storage
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64Url = event.target?.result as string;
+        const newMedia: MediaItem = {
+          id: `media_${Date.now()}`,
+          name: file.name,
+          originalName: file.name,
+          url: base64Url,
+          size: Math.round(file.size),
+          mimeType: file.type || 'image/jpeg',
+          uploadedAt: new Date().toISOString(),
+        };
 
-      if (res.ok) {
-        const data = await res.json();
+        const current = getStoredSiteData().media || [];
+        const updated = [newMedia, ...current];
+        saveStoredSiteData({ media: updated });
+        setMediaList(updated);
         showToast('success', `"${file.name}" uploaded successfully`);
-        await fetchMedia();
-      } else {
-        showToast('error', 'Failed to upload image file');
-      }
+
+        // Try backend upload if available
+        try {
+          const formData = new FormData();
+          formData.append('image', file);
+          formData.append('name', file.name);
+          await authFetch('/api/media/upload', {
+            method: 'POST',
+            body: formData,
+          });
+        } catch {
+          // Static mode
+        }
+      };
+      reader.readAsDataURL(file);
     } catch (err) {
       showToast('error', 'Error during upload');
     } finally {
@@ -74,10 +97,16 @@ export const AdminMedia: React.FC<AdminMediaProps> = ({ showToast }) => {
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete "${name}"?`)) return;
     try {
-      const res = await authFetch(`/api/media/${id}`, { method: 'DELETE' });
-      if (res.ok) {
-        showToast('success', 'Media deleted');
-        setMediaList((prev) => prev.filter((m) => m.id !== id));
+      const current = getStoredSiteData().media || [];
+      const updated = current.filter((m) => m.id !== id);
+      saveStoredSiteData({ media: updated });
+      setMediaList(updated);
+      showToast('success', 'Media deleted');
+
+      try {
+        await authFetch(`/api/media/${id}`, { method: 'DELETE' });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Failed to delete media');

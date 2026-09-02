@@ -3,6 +3,7 @@ import { Sparkles, Save, Image as ImageIcon, CheckCircle, ExternalLink } from 'l
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { HeroConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminHeroProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,22 +12,25 @@ interface AdminHeroProps {
 export const AdminHero: React.FC<AdminHeroProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [hero, setHero] = useState<HeroConfig | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [hero, setHero] = useState<HeroConfig | null>(() => getStoredSiteData().hero);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchHero = async () => {
+    const local = getStoredSiteData().hero;
+    setHero(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/hero');
       if (res.ok) {
         const data = await res.json();
-        setHero(data);
+        if (data) {
+          setHero(data);
+          saveStoredSiteData({ hero: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -40,17 +44,18 @@ export const AdminHero: React.FC<AdminHeroProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      const res = await authFetch('/api/hero', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(hero),
-      });
+      saveStoredSiteData({ hero });
+      showToast('success', 'Hero banner settings updated and live');
+      await refreshData();
 
-      if (res.ok) {
-        showToast('success', 'Hero banner settings updated successfully');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save hero banner');
+      try {
+        await authFetch('/api/hero', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(hero),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving hero settings');

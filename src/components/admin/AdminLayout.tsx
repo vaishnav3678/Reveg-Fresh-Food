@@ -36,7 +36,6 @@ export type AdminTab =
   | 'about'
   | 'gallery'
   | 'testimonials'
-  | 'enquiries'
   | 'settings'
   | 'theme'
   | 'navigation'
@@ -50,7 +49,6 @@ interface AdminLayoutProps {
   onTabChange: (tab: AdminTab) => void;
   onViewLiveSite: () => void;
   children: React.ReactNode;
-  unreadCount?: number;
   toastMessage?: { type: 'success' | 'error' | 'info'; text: string } | null;
   onClearToast?: () => void;
 }
@@ -60,7 +58,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
   onTabChange,
   onViewLiveSite,
   children,
-  unreadCount = 0,
   toastMessage,
   onClearToast,
 }) => {
@@ -77,7 +74,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 
   const navItems: Array<{ id: AdminTab; label: string; icon: any; badge?: number; group?: string }> = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'General' },
-    { id: 'enquiries', label: 'Enquiries Inbox', icon: Inbox, badge: unreadCount, group: 'General' },
 
     { id: 'products', label: 'Products', icon: ShoppingBag, group: 'Catalog' },
     { id: 'categories', label: 'Categories', icon: Layers, group: 'Catalog' },
@@ -190,17 +186,6 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
         </div>
 
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => onTabChange('enquiries')}
-            className="relative p-2 rounded-xl bg-[#0D5B29] text-white"
-          >
-            <Inbox className="w-4 h-4 text-[#F5A800]" />
-            {unreadCount > 0 && (
-              <span className="absolute -top-1 -right-1 bg-red-500 text-white text-[9px] font-bold px-1.5 py-0.2 rounded-full">
-                {unreadCount}
-              </span>
-            )}
-          </button>
           <button
             onClick={() => setMobileMenuOpen(!mobileMenuOpen)}
             className="p-2 rounded-xl bg-[#0D5B29] text-white"

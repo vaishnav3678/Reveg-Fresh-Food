@@ -3,6 +3,7 @@ import { PanelBottom, Save, Plus, Trash2 } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { FooterConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
+import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
 
 interface AdminFooterProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,22 +12,25 @@ interface AdminFooterProps {
 export const AdminFooter: React.FC<AdminFooterProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
   const { refreshData } = useSiteData();
-  const [footer, setFooter] = useState<FooterConfig | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
+  const [footer, setFooter] = useState<FooterConfig | null>(() => getStoredSiteData().footer);
+  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
   const fetchFooter = async () => {
+    const local = getStoredSiteData().footer;
+    setFooter(local);
+
     try {
-      setIsLoading(true);
       const res = await authFetch('/api/footer');
       if (res.ok) {
         const data = await res.json();
-        setFooter(data);
+        if (data) {
+          setFooter(data);
+          saveStoredSiteData({ footer: data });
+        }
       }
-    } catch (err) {
-      console.error(err);
-    } finally {
-      setIsLoading(false);
+    } catch {
+      // Static mode
     }
   };
 
@@ -40,17 +44,18 @@ export const AdminFooter: React.FC<AdminFooterProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      const res = await authFetch('/api/footer', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(footer),
-      });
+      saveStoredSiteData({ footer });
+      showToast('success', 'Footer settings updated');
+      await refreshData();
 
-      if (res.ok) {
-        showToast('success', 'Footer settings updated');
-        await refreshData();
-      } else {
-        showToast('error', 'Failed to save footer');
+      try {
+        await authFetch('/api/footer', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(footer),
+        });
+      } catch {
+        // Static mode
       }
     } catch (err) {
       showToast('error', 'Error saving footer');
