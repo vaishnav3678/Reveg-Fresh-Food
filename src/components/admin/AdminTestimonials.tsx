@@ -3,7 +3,7 @@ import { MessageSquareQuote, Plus, Edit2, Trash2, Save, X, Star, CheckCircle2 } 
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { TestimonialRecord } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveTestimonial, supabaseDeleteTestimonial } from '../../services/supabaseService';
 
 interface AdminTestimonialsProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,8 +11,8 @@ interface AdminTestimonialsProps {
 
 export const AdminTestimonials: React.FC<AdminTestimonialsProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [testimonials, setTestimonials] = useState<TestimonialRecord[]>(() => getStoredSiteData().testimonials || []);
+  const { data: siteData, refreshData } = useSiteData();
+  const [testimonials, setTestimonials] = useState<TestimonialRecord[]>(() => siteData?.testimonials || []);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingTestimonial, setEditingTestimonial] = useState<TestimonialRecord | null>(null);
@@ -38,27 +38,11 @@ export const AdminTestimonials: React.FC<AdminTestimonialsProps> = ({ showToast 
     isApproved: true,
   });
 
-  const fetchTestimonials = async () => {
-    const local = getStoredSiteData().testimonials || [];
-    setTestimonials(local);
-
-    try {
-      const res = await authFetch('/api/testimonials');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setTestimonials(data);
-          saveStoredSiteData({ testimonials: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchTestimonials();
-  }, []);
+    if (siteData?.testimonials) {
+      setTestimonials(siteData.testimonials);
+    }
+  }, [siteData?.testimonials]);
 
   const openAddModal = () => {
     setEditingTestimonial(null);
@@ -99,33 +83,32 @@ export const AdminTestimonials: React.FC<AdminTestimonialsProps> = ({ showToast 
 
     try {
       setIsSaving(true);
-      const current = getStoredSiteData().testimonials || [];
-      let updated: TestimonialRecord[];
+      const itemToSave: TestimonialRecord = editingTestimonial
+        ? {
+            ...editingTestimonial,
+            ...formData,
+          }
+        : {
+            id: `test_${Date.now()}`,
+            name: formData.name,
+            designation: formData.designation,
+            location: formData.location,
+            avatar: formData.avatar,
+            rating: formData.rating,
+            comment: formData.comment,
+            event: formData.event,
+            isApproved: formData.isApproved,
+            sortOrder: testimonials.length + 1,
+            createdAt: new Date().toISOString(),
+          };
 
-      if (editingTestimonial) {
-        updated = current.map((t) =>
-          t.id === editingTestimonial.id ? { ...t, ...formData } : t
-        );
+      const res = await supabaseSaveTestimonial(itemToSave);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save testimonial in Supabase');
       } else {
-        const newTestimonial: TestimonialRecord = {
-          id: `test_${Date.now()}`,
-          name: formData.name,
-          designation: formData.designation,
-          location: formData.location,
-          avatar: formData.avatar,
-          rating: formData.rating,
-          comment: formData.comment,
-          event: formData.event,
-          isApproved: formData.isApproved,
-          sortOrder: current.length + 1,
-          createdAt: new Date().toISOString(),
-        };
-        updated = [...current, newTestimonial];
+        showToast('success', editingTestimonial ? 'Review updated' : 'Review added');
       }
 
-      saveStoredSiteData({ testimonials: updated });
-      setTestimonials(updated);
-      showToast('success', editingTestimonial ? 'Review updated' : 'Review added');
       setIsModalOpen(false);
       await refreshData();
 
@@ -156,11 +139,12 @@ export const AdminTestimonials: React.FC<AdminTestimonialsProps> = ({ showToast 
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete review from "${name}"?`)) return;
     try {
-      const current = getStoredSiteData().testimonials || [];
-      const updated = current.filter((t) => t.id !== id);
-      saveStoredSiteData({ testimonials: updated });
-      setTestimonials(updated);
-      showToast('success', 'Review deleted');
+      const res = await supabaseDeleteTestimonial(id);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to delete review in Supabase');
+      } else {
+        showToast('success', 'Review deleted');
+      }
       await refreshData();
 
       try {

@@ -3,7 +3,7 @@ import { Camera, Plus, Edit2, Trash2, Save, X, Eye, EyeOff } from 'lucide-react'
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { GalleryItemRecord } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveGalleryItem, supabaseDeleteGalleryItem } from '../../services/supabaseService';
 
 interface AdminGalleryProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,8 +11,8 @@ interface AdminGalleryProps {
 
 export const AdminGallery: React.FC<AdminGalleryProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [gallery, setGallery] = useState<GalleryItemRecord[]>(() => getStoredSiteData().gallery || []);
+  const { data: siteData, refreshData } = useSiteData();
+  const [gallery, setGallery] = useState<GalleryItemRecord[]>(() => siteData?.gallery || []);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingItem, setEditingItem] = useState<GalleryItemRecord | null>(null);
@@ -33,27 +33,11 @@ export const AdminGallery: React.FC<AdminGalleryProps> = ({ showToast }) => {
     isEnabled: true,
   });
 
-  const fetchGallery = async () => {
-    const local = getStoredSiteData().gallery || [];
-    setGallery(local);
-
-    try {
-      const res = await authFetch('/api/gallery');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setGallery(data);
-          saveStoredSiteData({ gallery: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchGallery();
-  }, []);
+    if (siteData?.gallery) {
+      setGallery(siteData.gallery);
+    }
+  }, [siteData?.gallery]);
 
   const openAddModal = () => {
     setEditingItem(null);
@@ -88,29 +72,28 @@ export const AdminGallery: React.FC<AdminGalleryProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      const current = getStoredSiteData().gallery || [];
-      let updated: GalleryItemRecord[];
+      const itemToSave: GalleryItemRecord = editingItem
+        ? {
+            ...editingItem,
+            ...formData,
+          }
+        : {
+            id: `gal_${Date.now()}`,
+            title: formData.title,
+            category: formData.category,
+            image: formData.image,
+            description: formData.description,
+            isEnabled: formData.isEnabled,
+            sortOrder: gallery.length + 1,
+          };
 
-      if (editingItem) {
-        updated = current.map((g) =>
-          g.id === editingItem.id ? { ...g, ...formData } : g
-        );
+      const res = await supabaseSaveGalleryItem(itemToSave);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save gallery item in Supabase');
       } else {
-        const newItem: GalleryItemRecord = {
-          id: `gal_${Date.now()}`,
-          title: formData.title,
-          category: formData.category,
-          image: formData.image,
-          description: formData.description,
-          isEnabled: formData.isEnabled,
-          sortOrder: current.length + 1,
-        };
-        updated = [...current, newItem];
+        showToast('success', editingItem ? 'Gallery item updated' : 'Photo added to gallery');
       }
 
-      saveStoredSiteData({ gallery: updated });
-      setGallery(updated);
-      showToast('success', editingItem ? 'Gallery item updated' : 'Photo added to gallery');
       setIsModalOpen(false);
       await refreshData();
 
@@ -141,11 +124,12 @@ export const AdminGallery: React.FC<AdminGalleryProps> = ({ showToast }) => {
   const handleDelete = async (id: string, title: string) => {
     if (!window.confirm(`Delete "${title}"?`)) return;
     try {
-      const current = getStoredSiteData().gallery || [];
-      const updated = current.filter((g) => g.id !== id);
-      saveStoredSiteData({ gallery: updated });
-      setGallery(updated);
-      showToast('success', 'Photo removed');
+      const res = await supabaseDeleteGalleryItem(id);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to delete photo in Supabase');
+      } else {
+        showToast('success', 'Photo removed');
+      }
       await refreshData();
 
       try {

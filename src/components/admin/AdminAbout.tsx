@@ -3,7 +3,7 @@ import { Info, Save, Plus, X, Sparkles } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { AboutConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveConfig } from '../../services/supabaseService';
 
 interface AdminAboutProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,33 +11,16 @@ interface AdminAboutProps {
 
 export const AdminAbout: React.FC<AdminAboutProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [about, setAbout] = useState<AboutConfig | null>(() => getStoredSiteData().about);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: siteData, refreshData } = useSiteData();
+  const [about, setAbout] = useState<AboutConfig | null>(() => siteData?.about || null);
   const [isSaving, setIsSaving] = useState(false);
   const [newValue, setNewValue] = useState('');
 
-  const fetchAbout = async () => {
-    const local = getStoredSiteData().about;
-    setAbout(local);
-
-    try {
-      const res = await authFetch('/api/about');
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setAbout(data);
-          saveStoredSiteData({ about: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchAbout();
-  }, []);
+    if (siteData?.about) {
+      setAbout(siteData.about);
+    }
+  }, [siteData?.about]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,8 +28,12 @@ export const AdminAbout: React.FC<AdminAboutProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      saveStoredSiteData({ about });
-      showToast('success', 'About & Heritage content updated and live');
+      const res = await supabaseSaveConfig('about', about);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save about section in Supabase');
+      } else {
+        showToast('success', 'About & Heritage content saved to Supabase and live');
+      }
       await refreshData();
 
       try {
@@ -92,7 +79,7 @@ export const AdminAbout: React.FC<AdminAboutProps> = ({ showToast }) => {
     }
   };
 
-  if (isLoading || !about) {
+  if (!about) {
     return <div className="p-8 text-center text-xs text-[#557060] bg-white rounded-3xl">Loading About Data...</div>;
   }
 

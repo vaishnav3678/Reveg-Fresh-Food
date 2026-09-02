@@ -3,7 +3,7 @@ import { PanelBottom, Save, Plus, Trash2 } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { FooterConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveConfig } from '../../services/supabaseService';
 
 interface AdminFooterProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,32 +11,15 @@ interface AdminFooterProps {
 
 export const AdminFooter: React.FC<AdminFooterProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [footer, setFooter] = useState<FooterConfig | null>(() => getStoredSiteData().footer);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: siteData, refreshData } = useSiteData();
+  const [footer, setFooter] = useState<FooterConfig | null>(() => siteData?.footer || null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const fetchFooter = async () => {
-    const local = getStoredSiteData().footer;
-    setFooter(local);
-
-    try {
-      const res = await authFetch('/api/footer');
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setFooter(data);
-          saveStoredSiteData({ footer: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchFooter();
-  }, []);
+    if (siteData?.footer) {
+      setFooter(siteData.footer);
+    }
+  }, [siteData?.footer]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,8 +27,12 @@ export const AdminFooter: React.FC<AdminFooterProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      saveStoredSiteData({ footer });
-      showToast('success', 'Footer settings updated');
+      const res = await supabaseSaveConfig('footer', footer);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save footer in Supabase');
+      } else {
+        showToast('success', 'Footer settings saved to Supabase');
+      }
       await refreshData();
 
       try {
@@ -64,7 +51,7 @@ export const AdminFooter: React.FC<AdminFooterProps> = ({ showToast }) => {
     }
   };
 
-  if (isLoading || !footer) {
+  if (!footer) {
     return <div className="p-8 text-center text-xs text-[#557060] bg-white rounded-3xl">Loading Footer...</div>;
   }
 

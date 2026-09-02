@@ -3,7 +3,7 @@ import { PhoneCall, MessageCircle, Save, Globe, Clock, MapPin, Mail, Sparkles, C
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { SiteSettings } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveConfig } from '../../services/supabaseService';
 
 interface AdminSettingsProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,32 +11,15 @@ interface AdminSettingsProps {
 
 export const AdminSettings: React.FC<AdminSettingsProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [settings, setSettings] = useState<SiteSettings | null>(() => getStoredSiteData().settings);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: siteData, refreshData } = useSiteData();
+  const [settings, setSettings] = useState<SiteSettings | null>(() => siteData?.settings || null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const fetchSettings = async () => {
-    const local = getStoredSiteData().settings;
-    setSettings(local);
-
-    try {
-      const res = await authFetch('/api/settings');
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setSettings(data);
-          saveStoredSiteData({ settings: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchSettings();
-  }, []);
+    if (siteData?.settings) {
+      setSettings(siteData.settings);
+    }
+  }, [siteData?.settings]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,8 +27,12 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      saveStoredSiteData({ settings });
-      showToast('success', 'Contact & WhatsApp settings updated across the entire website');
+      const res = await supabaseSaveConfig('settings', settings);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save settings in Supabase');
+      } else {
+        showToast('success', 'Contact & WhatsApp settings saved to Supabase');
+      }
       await refreshData();
 
       try {
@@ -64,7 +51,7 @@ export const AdminSettings: React.FC<AdminSettingsProps> = ({ showToast }) => {
     }
   };
 
-  if (isLoading || !settings) {
+  if (!settings) {
     return <div className="p-8 text-center text-xs text-[#557060] bg-white rounded-3xl">Loading Settings...</div>;
   }
 

@@ -20,7 +20,7 @@ import {
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { ProductItem } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveProduct, supabaseDeleteProduct } from '../../services/supabaseService';
 
 interface AdminProductsProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -28,9 +28,9 @@ interface AdminProductsProps {
 
 export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
+  const { data: siteData, refreshData } = useSiteData();
   const [products, setProducts] = useState<ProductItem[]>(() => {
-    return getStoredSiteData().products || [];
+    return siteData?.products || [];
   });
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -78,27 +78,11 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
   const [newPackSize, setNewPackSize] = useState('');
   const [newIngredient, setNewIngredient] = useState('');
 
-  const fetchProducts = async () => {
-    const local = getStoredSiteData().products || [];
-    setProducts(local);
-
-    try {
-      const res = await authFetch('/api/products');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setProducts(data);
-          saveStoredSiteData({ products: data });
-        }
-      }
-    } catch {
-      // Backend not running (static deployment) -> localStore is authoritative
-    }
-  };
-
   useEffect(() => {
-    fetchProducts();
-  }, []);
+    if (siteData?.products) {
+      setProducts(siteData.products);
+    }
+  }, [siteData?.products]);
 
   const openAddModal = () => {
     setEditingProduct(null);
@@ -151,48 +135,44 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      const currentList = getStoredSiteData().products || [];
-      let updatedList: ProductItem[];
+      const prodToSave: ProductItem = editingProduct
+        ? {
+            ...editingProduct,
+            ...formData,
+          }
+        : {
+            id: `prod_${Date.now()}`,
+            name: formData.name,
+            category: formData.category,
+            secondaryCategories: formData.secondaryCategories,
+            description: formData.description,
+            detailedDescription: formData.detailedDescription,
+            image: formData.image,
+            isPopular: formData.isPopular,
+            isFestiveSpecial: formData.isFestiveSpecial,
+            packSizes: formData.packSizes,
+            tasteProfile: formData.tasteProfile,
+            ingredientsHighlight: formData.ingredientsHighlight,
+            texture: formData.texture,
+            priceGuide: formData.priceGuide,
+            status: formData.status,
+            sortOrder: products.length + 1,
+          };
 
-      if (editingProduct) {
-        updatedList = currentList.map((p) =>
-          p.id === editingProduct.id
-            ? {
-                ...p,
-                ...formData,
-              }
-            : p
-        );
+      // 1. Save permanently to Supabase PostgreSQL
+      const result = await supabaseSaveProduct(prodToSave);
+      if (!result.success) {
+        showToast('error', result.error || 'Failed to save product in Supabase');
       } else {
-        const newProd: ProductItem = {
-          id: `prod_${Date.now()}`,
-          name: formData.name,
-          category: formData.category,
-          secondaryCategories: formData.secondaryCategories,
-          description: formData.description,
-          detailedDescription: formData.detailedDescription,
-          image: formData.image,
-          isPopular: formData.isPopular,
-          isFestiveSpecial: formData.isFestiveSpecial,
-          packSizes: formData.packSizes,
-          tasteProfile: formData.tasteProfile,
-          ingredientsHighlight: formData.ingredientsHighlight,
-          texture: formData.texture,
-          priceGuide: formData.priceGuide,
-          status: formData.status,
-          sortOrder: currentList.length + 1,
-        };
-        updatedList = [newProd, ...currentList];
+        showToast('success', editingProduct ? 'Product updated successfully' : 'Product added successfully');
       }
 
-      // Save immediately to static storage & trigger site sync
-      saveStoredSiteData({ products: updatedList });
-      setProducts(updatedList);
-      showToast('success', editingProduct ? 'Product updated successfully' : 'Product added successfully');
       setIsModalOpen(false);
+
+      // 2. Refresh site context immediately
       await refreshData();
 
-      // Optional backend sync if server exists
+      // 3. Optional backend sync if server exists
       try {
         if (editingProduct) {
           await authFetch(`/api/products/${editingProduct.id}`, {
@@ -208,7 +188,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
           });
         }
       } catch {
-        // Ignored in static mode
+        // Ignored
       }
     } catch (err) {
       console.error('Error saving product:', err);
@@ -222,17 +202,18 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
     if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
 
     try {
-      const currentList = getStoredSiteData().products || [];
-      const updatedList = currentList.filter((p) => p.id !== id);
-      saveStoredSiteData({ products: updatedList });
-      setProducts(updatedList);
-      showToast('success', `"${name}" removed from catalogue`);
+      const result = await supabaseDeleteProduct(id);
+      if (!result.success) {
+        showToast('error', result.error || 'Failed to delete product in Supabase');
+      } else {
+        showToast('success', `"${name}" removed from catalogue`);
+      }
       await refreshData();
 
       try {
         await authFetch(`/api/products/${id}`, { method: 'DELETE' });
       } catch {
-        // Static mode
+        // Ignored
       }
     } catch (err) {
       showToast('error', 'Error deleting product');
@@ -242,11 +223,11 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
   const handleToggleStatus = async (product: ProductItem) => {
     const nextStatus = product.status === 'active' ? 'inactive' : 'active';
     try {
-      const currentList = getStoredSiteData().products || [];
-      const updatedList = currentList.map((p) => (p.id === product.id ? { ...p, status: nextStatus as any } : p));
-      saveStoredSiteData({ products: updatedList });
-      setProducts(updatedList);
-      showToast('info', `${product.name} is now ${nextStatus}`);
+      const updated = { ...product, status: nextStatus as 'active' | 'inactive' };
+      const res = await supabaseSaveProduct(updated);
+      if (res.success) {
+        showToast('info', `${product.name} is now ${nextStatus}`);
+      }
       await refreshData();
 
       try {
@@ -256,7 +237,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
           body: JSON.stringify({ status: nextStatus }),
         });
       } catch {
-        // Static mode
+        // Ignored
       }
     } catch (err) {
       showToast('error', 'Failed to update status');

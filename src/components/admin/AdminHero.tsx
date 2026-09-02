@@ -3,7 +3,7 @@ import { Sparkles, Save, Image as ImageIcon, CheckCircle, ExternalLink } from 'l
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { HeroConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveConfig } from '../../services/supabaseService';
 
 interface AdminHeroProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,32 +11,15 @@ interface AdminHeroProps {
 
 export const AdminHero: React.FC<AdminHeroProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [hero, setHero] = useState<HeroConfig | null>(() => getStoredSiteData().hero);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: siteData, refreshData } = useSiteData();
+  const [hero, setHero] = useState<HeroConfig | null>(() => siteData?.hero || null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const fetchHero = async () => {
-    const local = getStoredSiteData().hero;
-    setHero(local);
-
-    try {
-      const res = await authFetch('/api/hero');
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setHero(data);
-          saveStoredSiteData({ hero: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchHero();
-  }, []);
+    if (siteData?.hero) {
+      setHero(siteData.hero);
+    }
+  }, [siteData?.hero]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,8 +27,12 @@ export const AdminHero: React.FC<AdminHeroProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      saveStoredSiteData({ hero });
-      showToast('success', 'Hero banner settings updated and live');
+      const res = await supabaseSaveConfig('hero', hero);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save hero config in Supabase');
+      } else {
+        showToast('success', 'Hero banner settings saved to Supabase and live');
+      }
       await refreshData();
 
       try {
@@ -64,7 +51,7 @@ export const AdminHero: React.FC<AdminHeroProps> = ({ showToast }) => {
     }
   };
 
-  if (isLoading || !hero) {
+  if (!hero) {
     return <div className="p-8 text-center text-xs text-[#557060] bg-white rounded-3xl">Loading Hero Config...</div>;
   }
 

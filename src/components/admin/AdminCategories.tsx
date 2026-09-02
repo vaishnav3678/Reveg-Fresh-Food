@@ -3,7 +3,7 @@ import { Layers, Plus, Edit2, Trash2, Save, X, Sparkles, Check } from 'lucide-re
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { CategoryItem } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveCategory, supabaseDeleteCategory } from '../../services/supabaseService';
 
 interface AdminCategoriesProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,8 +11,8 @@ interface AdminCategoriesProps {
 
 export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [categories, setCategories] = useState<CategoryItem[]>(() => getStoredSiteData().categories || []);
+  const { data: siteData, refreshData } = useSiteData();
+  const [categories, setCategories] = useState<CategoryItem[]>(() => siteData?.categories || []);
   const [isLoading, setIsLoading] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [editingCategory, setEditingCategory] = useState<CategoryItem | null>(null);
@@ -36,27 +36,11 @@ export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) =
     status: 'active',
   });
 
-  const fetchCategories = async () => {
-    const local = getStoredSiteData().categories || [];
-    setCategories(local);
-
-    try {
-      const res = await authFetch('/api/categories');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setCategories(data);
-          saveStoredSiteData({ categories: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchCategories();
-  }, []);
+    if (siteData?.categories) {
+      setCategories(siteData.categories);
+    }
+  }, [siteData?.categories]);
 
   const openAddModal = () => {
     setEditingCategory(null);
@@ -95,34 +79,34 @@ export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) =
 
     try {
       setIsSaving(true);
-      const current = getStoredSiteData().categories || [];
       const slug = formData.slug || formData.name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-      let updated: CategoryItem[];
+      const catToSave: CategoryItem = editingCategory
+        ? {
+            ...editingCategory,
+            ...formData,
+            slug,
+          }
+        : {
+            id: `cat_${Date.now()}`,
+            name: formData.name,
+            slug,
+            tagline: formData.tagline,
+            description: formData.description,
+            badge: formData.badge,
+            iconName: formData.iconName,
+            items: [],
+            sampleProducts: [],
+            status: formData.status,
+            sortOrder: categories.length + 1,
+          };
 
-      if (editingCategory) {
-        updated = current.map((c) =>
-          c.id === editingCategory.id ? { ...c, ...formData, slug } : c
-        );
+      const res = await supabaseSaveCategory(catToSave);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save category in Supabase');
       } else {
-        const newCat: CategoryItem = {
-          id: `cat_${Date.now()}`,
-          name: formData.name,
-          slug,
-          tagline: formData.tagline,
-          description: formData.description,
-          badge: formData.badge,
-          iconName: formData.iconName,
-          items: [],
-          sampleProducts: [],
-          status: formData.status,
-          sortOrder: current.length + 1,
-        };
-        updated = [...current, newCat];
+        showToast('success', editingCategory ? 'Category updated' : 'Category created');
       }
 
-      saveStoredSiteData({ categories: updated });
-      setCategories(updated);
-      showToast('success', editingCategory ? 'Category updated' : 'Category created');
       setIsModalOpen(false);
       await refreshData();
 
@@ -153,11 +137,12 @@ export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) =
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete category "${name}"?`)) return;
     try {
-      const current = getStoredSiteData().categories || [];
-      const updated = current.filter((c) => c.id !== id);
-      saveStoredSiteData({ categories: updated });
-      setCategories(updated);
-      showToast('success', `Category "${name}" deleted`);
+      const res = await supabaseDeleteCategory(id);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to delete category in Supabase');
+      } else {
+        showToast('success', `Category "${name}" deleted`);
+      }
       await refreshData();
 
       try {
@@ -165,8 +150,8 @@ export const AdminCategories: React.FC<AdminCategoriesProps> = ({ showToast }) =
       } catch {
         // Static mode
       }
-    } catch (e) {
-      showToast('error', 'Failed to delete');
+    } catch (err) {
+      showToast('error', 'Failed to delete category');
     }
   };
 

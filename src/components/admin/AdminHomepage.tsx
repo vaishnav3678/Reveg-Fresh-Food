@@ -3,7 +3,7 @@ import { Home, ArrowUp, ArrowDown, Eye, EyeOff, Save, CheckCircle, Sparkles, Lay
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { SectionConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveConfig } from '../../services/supabaseService';
 
 interface AdminHomepageProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,36 +11,18 @@ interface AdminHomepageProps {
 
 export const AdminHomepage: React.FC<AdminHomepageProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
+  const { data: siteData, refreshData } = useSiteData();
   const [sections, setSections] = useState<SectionConfig[]>(() => {
-    const raw = getStoredSiteData().sections || [];
+    const raw = siteData?.sections || [];
     return [...raw].sort((a, b) => a.sortOrder - b.sortOrder);
   });
-  const [isLoading, setIsLoading] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
 
-  const fetchSections = async () => {
-    const local = getStoredSiteData().sections || [];
-    setSections([...local].sort((a, b) => a.sortOrder - b.sortOrder));
-
-    try {
-      const res = await authFetch('/api/sections');
-      if (res.ok) {
-        const data: SectionConfig[] = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          const sorted = data.sort((a, b) => a.sortOrder - b.sortOrder);
-          setSections(sorted);
-          saveStoredSiteData({ sections: sorted });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchSections();
-  }, []);
+    if (siteData?.sections) {
+      setSections([...siteData.sections].sort((a, b) => a.sortOrder - b.sortOrder));
+    }
+  }, [siteData?.sections]);
 
   const moveSection = (index: number, direction: 'up' | 'down') => {
     const targetIndex = direction === 'up' ? index - 1 : index + 1;
@@ -74,8 +56,12 @@ export const AdminHomepage: React.FC<AdminHomepageProps> = ({ showToast }) => {
   const handleSaveSections = async () => {
     try {
       setIsSaving(true);
-      saveStoredSiteData({ sections });
-      showToast('success', 'Homepage sections and order updated successfully');
+      const res = await supabaseSaveConfig('sections', sections);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save sections in Supabase');
+      } else {
+        showToast('success', 'Homepage sections and order saved to Supabase');
+      }
       await refreshData();
 
       try {
@@ -121,7 +107,7 @@ export const AdminHomepage: React.FC<AdminHomepageProps> = ({ showToast }) => {
 
       {/* Sections List */}
       <div className="space-y-3">
-        {isLoading ? (
+        {sections.length === 0 ? (
           <div className="p-8 text-center text-xs text-[#557060] bg-white rounded-3xl">Loading sections...</div>
         ) : (
           sections.map((sec, idx) => (

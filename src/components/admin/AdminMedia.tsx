@@ -2,7 +2,8 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Image as ImageIcon, Upload, Trash2, Copy, Check, ExternalLink, Plus } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { MediaItem } from '../../server/db';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { useSiteData } from '../../context/SiteContext';
+import { supabaseSaveMediaItem, supabaseDeleteMediaItem } from '../../services/supabaseService';
 
 interface AdminMediaProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -10,33 +11,17 @@ interface AdminMediaProps {
 
 export const AdminMedia: React.FC<AdminMediaProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const [mediaList, setMediaList] = useState<MediaItem[]>(() => getStoredSiteData().media || []);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: siteData, refreshData } = useSiteData();
+  const [mediaList, setMediaList] = useState<MediaItem[]>(() => siteData?.media || []);
   const [isUploading, setIsUploading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const fetchMedia = async () => {
-    const local = getStoredSiteData().media || [];
-    setMediaList(local);
-
-    try {
-      const res = await authFetch('/api/media');
-      if (res.ok) {
-        const data = await res.json();
-        if (Array.isArray(data) && data.length > 0) {
-          setMediaList(data);
-          saveStoredSiteData({ media: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchMedia();
-  }, []);
+    if (siteData?.media) {
+      setMediaList(siteData.media);
+    }
+  }, [siteData?.media]);
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -45,7 +30,6 @@ export const AdminMedia: React.FC<AdminMediaProps> = ({ showToast }) => {
     try {
       setIsUploading(true);
 
-      // Convert to base64 for instant client-side offline storage
       const reader = new FileReader();
       reader.onload = async (event) => {
         const base64Url = event.target?.result as string;
@@ -59,11 +43,13 @@ export const AdminMedia: React.FC<AdminMediaProps> = ({ showToast }) => {
           uploadedAt: new Date().toISOString(),
         };
 
-        const current = getStoredSiteData().media || [];
-        const updated = [newMedia, ...current];
-        saveStoredSiteData({ media: updated });
-        setMediaList(updated);
-        showToast('success', `"${file.name}" uploaded successfully`);
+        const res = await supabaseSaveMediaItem(newMedia);
+        if (!res.success) {
+          showToast('error', res.error || 'Failed to save media in Supabase');
+        } else {
+          showToast('success', `"${file.name}" uploaded and saved to Supabase`);
+        }
+        await refreshData();
 
         // Try backend upload if available
         try {
@@ -97,11 +83,13 @@ export const AdminMedia: React.FC<AdminMediaProps> = ({ showToast }) => {
   const handleDelete = async (id: string, name: string) => {
     if (!window.confirm(`Delete "${name}"?`)) return;
     try {
-      const current = getStoredSiteData().media || [];
-      const updated = current.filter((m) => m.id !== id);
-      saveStoredSiteData({ media: updated });
-      setMediaList(updated);
-      showToast('success', 'Media deleted');
+      const res = await supabaseDeleteMediaItem(id);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to delete media in Supabase');
+      } else {
+        showToast('success', 'Media deleted');
+      }
+      await refreshData();
 
       try {
         await authFetch(`/api/media/${id}`, { method: 'DELETE' });
@@ -161,8 +149,8 @@ export const AdminMedia: React.FC<AdminMediaProps> = ({ showToast }) => {
 
       {/* Media Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        {isLoading ? (
-          <div className="col-span-full p-8 text-center text-xs text-[#557060]">Loading media...</div>
+        {mediaList.length === 0 ? (
+          <div className="col-span-full p-8 text-center text-xs text-[#557060]">No media uploaded yet. Use the upload button above to add assets.</div>
         ) : (
           mediaList.map((item) => (
             <div

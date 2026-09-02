@@ -3,7 +3,7 @@ import { Search, Save, Globe } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { SeoSettings } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveConfig } from '../../services/supabaseService';
 
 interface AdminSeoProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,32 +11,15 @@ interface AdminSeoProps {
 
 export const AdminSeo: React.FC<AdminSeoProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [seo, setSeo] = useState<SeoSettings | null>(() => getStoredSiteData().seo);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: siteData, refreshData } = useSiteData();
+  const [seo, setSeo] = useState<SeoSettings | null>(() => siteData?.seo || null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const fetchSeo = async () => {
-    const local = getStoredSiteData().seo;
-    setSeo(local);
-
-    try {
-      const res = await authFetch('/api/seo');
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setSeo(data);
-          saveStoredSiteData({ seo: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchSeo();
-  }, []);
+    if (siteData?.seo) {
+      setSeo(siteData.seo);
+    }
+  }, [siteData?.seo]);
 
   const handleSave = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,8 +27,12 @@ export const AdminSeo: React.FC<AdminSeoProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      saveStoredSiteData({ seo });
-      showToast('success', 'SEO & Meta tags updated successfully');
+      const res = await supabaseSaveConfig('seo', seo);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save SEO in Supabase');
+      } else {
+        showToast('success', 'SEO & Meta tags saved to Supabase');
+      }
       await refreshData();
 
       try {
@@ -64,7 +51,7 @@ export const AdminSeo: React.FC<AdminSeoProps> = ({ showToast }) => {
     }
   };
 
-  if (isLoading || !seo) {
+  if (!seo) {
     return <div className="p-8 text-center text-xs text-[#557060] bg-white rounded-3xl">Loading SEO...</div>;
   }
 

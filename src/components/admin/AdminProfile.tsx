@@ -3,6 +3,7 @@ import { KeyRound, User, Lock, Save, ShieldCheck, AlertCircle, RotateCcw } from 
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { useSiteData } from '../../context/SiteContext';
 import { resetStoredSiteData } from '../../utils/localStore';
+import { supabaseResetToDefault } from '../../services/supabaseService';
 
 interface AdminProfileProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -102,7 +103,7 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
   const handleResetDemoData = async () => {
     if (
       !window.confirm(
-        'Are you sure you want to reset the entire database to the default authentic RevEg demo state?'
+        'Are you sure you want to reset the database to the default authentic RevEg demo state in Supabase?'
       )
     )
       return;
@@ -110,7 +111,8 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
     try {
       setIsResetting(true);
       resetStoredSiteData();
-      showToast('success', 'Database reset to default RevEg demo state');
+      await supabaseResetToDefault();
+      showToast('success', 'Database reset to default RevEg demo state in Supabase');
       await refreshData();
 
       try {

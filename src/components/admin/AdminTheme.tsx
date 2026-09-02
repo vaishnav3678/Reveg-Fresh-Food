@@ -3,7 +3,7 @@ import { Palette, Save, RotateCcw, Sparkles, Check } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { ThemeSettings } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveConfig } from '../../services/supabaseService';
 
 interface AdminThemeProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,34 +11,17 @@ interface AdminThemeProps {
 
 export const AdminTheme: React.FC<AdminThemeProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [theme, setTheme] = useState<ThemeSettings | null>(() => getStoredSiteData().theme);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: siteData, refreshData } = useSiteData();
+  const [theme, setTheme] = useState<ThemeSettings | null>(() => siteData?.theme || null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const fetchTheme = async () => {
-    const local = getStoredSiteData().theme;
-    setTheme(local);
-
-    try {
-      const res = await authFetch('/api/theme');
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setTheme(data);
-          saveStoredSiteData({ theme: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchTheme();
-  }, []);
+    if (siteData?.theme) {
+      setTheme(siteData.theme);
+    }
+  }, [siteData?.theme]);
 
-  const handleResetToBrand = () => {
+  const handleResetToBrand = async () => {
     const defaultTheme: ThemeSettings = {
       primaryColor: '#0D5B29',
       primaryDark: '#083E1B',
@@ -53,8 +36,8 @@ export const AdminTheme: React.FC<AdminThemeProps> = ({ showToast }) => {
       fontBody: 'Plus Jakarta Sans, sans-serif',
     };
     setTheme(defaultTheme);
-    saveStoredSiteData({ theme: defaultTheme });
-    refreshData();
+    await supabaseSaveConfig('theme', defaultTheme);
+    await refreshData();
     showToast('info', 'Reset palette to official RevEg logo branding');
   };
 
@@ -64,8 +47,12 @@ export const AdminTheme: React.FC<AdminThemeProps> = ({ showToast }) => {
 
     try {
       setIsSaving(true);
-      saveStoredSiteData({ theme });
-      showToast('success', 'Theme & appearance palette saved');
+      const res = await supabaseSaveConfig('theme', theme);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save theme in Supabase');
+      } else {
+        showToast('success', 'Theme & appearance palette saved to Supabase');
+      }
       await refreshData();
 
       try {
@@ -84,7 +71,7 @@ export const AdminTheme: React.FC<AdminThemeProps> = ({ showToast }) => {
     }
   };
 
-  if (isLoading || !theme) {
+  if (!theme) {
     return <div className="p-8 text-center text-xs text-[#557060] bg-white rounded-3xl">Loading Theme...</div>;
   }
 

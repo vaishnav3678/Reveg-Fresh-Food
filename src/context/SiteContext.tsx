@@ -14,7 +14,9 @@ import {
   FooterConfig,
   MediaItem,
 } from '../server/db';
-import { getStoredSiteData, saveStoredSiteData } from '../utils/localStore';
+import { INITIAL_SITE_DATA } from '../data/initialData';
+import { fetchAllDataFromSupabase } from '../services/supabaseService';
+import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 
 export interface PublicSiteData {
   settings: SiteSettings;
@@ -36,6 +38,7 @@ interface SiteContextType {
   data: PublicSiteData | null;
   isLoading: boolean;
   error: string | null;
+  isSupabaseActive: boolean;
   refreshData: () => Promise<void>;
   updateSiteData: (updated: Partial<PublicSiteData>) => void;
   getWhatsAppUrl: (message: string) => string;
@@ -45,9 +48,10 @@ interface SiteContextType {
 const SiteContext = createContext<SiteContextType | undefined>(undefined);
 
 export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [data, setData] = useState<PublicSiteData | null>(() => getStoredSiteData());
-  const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [data, setData] = useState<PublicSiteData | null>(INITIAL_SITE_DATA);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
+  const [isSupabaseActive, setIsSupabaseActive] = useState<boolean>(isSupabaseConfigured());
 
   const applyDomSettings = useCallback((siteData: PublicSiteData) => {
     // Apply dynamic SEO title and meta
@@ -83,57 +87,92 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
   }, []);
 
   const fetchSiteData = useCallback(async () => {
-    // 1. First load from localStorage to guarantee immediate zero-delay display
-    const local = getStoredSiteData();
-    setData(local);
-    applyDomSettings(local);
-
-    // 2. If server API is available, optionally sync
+    setIsLoading(true);
+    setError(null);
     try {
-      const res = await fetch('/api/public-content');
-      if (res.ok) {
-        const contentType = res.headers.get('content-type');
-        if (contentType && contentType.includes('application/json')) {
-          const json: PublicSiteData = await res.json();
-          setData(json);
-          applyDomSettings(json);
-          saveStoredSiteData(json);
-        }
+      // 1. Primary Source of Truth: Supabase PostgreSQL
+      if (isSupabaseConfigured()) {
+        setIsSupabaseActive(true);
+        const supabaseData = await fetchAllDataFromSupabase();
+        setData(supabaseData);
+        applyDomSettings(supabaseData);
+        setIsLoading(false);
+        return;
       }
-    } catch {
-      // Backend not running (static deployment) -> perfectly fine, already loaded from localStorage
+
+      // 2. Secondary: If Express server has database API running
+      try {
+        const res = await fetch('/api/public-content');
+        if (res.ok) {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const json: PublicSiteData = await res.json();
+            setData(json);
+            applyDomSettings(json);
+            setIsLoading(false);
+            return;
+          }
+        }
+      } catch {
+        // Express not answering
+      }
+
+      // 3. Fallback to initial structured data
+      setData(INITIAL_SITE_DATA);
+      applyDomSettings(INITIAL_SITE_DATA);
+    } catch (err: any) {
+      console.error('Failed to load site data:', err);
+      setError(err.message || 'Failed to fetch site data');
+      setData(INITIAL_SITE_DATA);
+      applyDomSettings(INITIAL_SITE_DATA);
+    } finally {
+      setIsLoading(false);
     }
   }, [applyDomSettings]);
 
   useEffect(() => {
     fetchSiteData();
 
-    // Listen for real-time changes saved across the admin panel in the same browser
-    const handleStorageUpdate = (e: any) => {
-      if (e.detail) {
-        setData(e.detail);
-        applyDomSettings(e.detail);
-      } else {
-        const updated = getStoredSiteData();
-        setData(updated);
-        applyDomSettings(updated);
-      }
-    };
+    // Setup Supabase Realtime subscription if client exists
+    const client = getSupabaseClient();
+    if (client) {
+      const channel = client
+        .channel('reveg_realtime_changes')
+        .on('postgres_changes', { event: '*', schema: 'public' }, () => {
+          fetchSiteData();
+        })
+        .subscribe();
 
-    window.addEventListener('reveg_site_data_updated', handleStorageUpdate);
-    window.addEventListener('storage', handleStorageUpdate);
-
-    return () => {
-      window.removeEventListener('reveg_site_data_updated', handleStorageUpdate);
-      window.removeEventListener('storage', handleStorageUpdate);
-    };
-  }, [fetchSiteData, applyDomSettings]);
+      return () => {
+        client.removeChannel(channel);
+      };
+    }
+  }, [fetchSiteData]);
 
   const updateSiteData = useCallback(
     (updated: Partial<PublicSiteData>) => {
-      const saved = saveStoredSiteData(updated);
-      setData(saved);
-      applyDomSettings(saved);
+      setData((prev) => {
+        if (!prev) return prev;
+        const merged: PublicSiteData = {
+          ...prev,
+          ...updated,
+          settings: updated.settings || prev.settings,
+          theme: updated.theme || prev.theme,
+          seo: updated.seo || prev.seo,
+          sections: updated.sections || prev.sections,
+          hero: updated.hero || prev.hero,
+          about: updated.about || prev.about,
+          products: updated.products || prev.products,
+          categories: updated.categories || prev.categories,
+          gallery: updated.gallery || prev.gallery,
+          testimonials: updated.testimonials || prev.testimonials,
+          navigation: updated.navigation || prev.navigation,
+          footer: updated.footer || prev.footer,
+          media: updated.media || prev.media,
+        };
+        applyDomSettings(merged);
+        return merged;
+      });
     },
     [applyDomSettings]
   );
@@ -164,6 +203,7 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         data,
         isLoading,
         error,
+        isSupabaseActive,
         refreshData: fetchSiteData,
         updateSiteData,
         getWhatsAppUrl,
@@ -182,4 +222,3 @@ export const useSiteData = () => {
   }
   return context;
 };
-

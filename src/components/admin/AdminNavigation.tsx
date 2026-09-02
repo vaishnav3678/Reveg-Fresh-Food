@@ -3,7 +3,7 @@ import { Compass, Plus, Trash2, Save, ArrowUp, ArrowDown, Eye, EyeOff } from 'lu
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { NavigationConfig } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
-import { getStoredSiteData, saveStoredSiteData } from '../../utils/localStore';
+import { supabaseSaveConfig } from '../../services/supabaseService';
 
 interface AdminNavigationProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -11,39 +11,26 @@ interface AdminNavigationProps {
 
 export const AdminNavigation: React.FC<AdminNavigationProps> = ({ showToast }) => {
   const { authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
-  const [nav, setNav] = useState<NavigationConfig | null>(() => getStoredSiteData().navigation);
-  const [isLoading, setIsLoading] = useState(false);
+  const { data: siteData, refreshData } = useSiteData();
+  const [nav, setNav] = useState<NavigationConfig | null>(() => siteData?.navigation || null);
   const [isSaving, setIsSaving] = useState(false);
 
-  const fetchNav = async () => {
-    const local = getStoredSiteData().navigation;
-    setNav(local);
-
-    try {
-      const res = await authFetch('/api/navigation');
-      if (res.ok) {
-        const data = await res.json();
-        if (data) {
-          setNav(data);
-          saveStoredSiteData({ navigation: data });
-        }
-      }
-    } catch {
-      // Static mode
-    }
-  };
-
   useEffect(() => {
-    fetchNav();
-  }, []);
+    if (siteData?.navigation) {
+      setNav(siteData.navigation);
+    }
+  }, [siteData?.navigation]);
 
   const handleSave = async () => {
     if (!nav) return;
     try {
       setIsSaving(true);
-      saveStoredSiteData({ navigation: nav });
-      showToast('success', 'Header navigation updated successfully');
+      const res = await supabaseSaveConfig('navigation', nav);
+      if (!res.success) {
+        showToast('error', res.error || 'Failed to save navigation in Supabase');
+      } else {
+        showToast('success', 'Header navigation saved to Supabase');
+      }
       await refreshData();
 
       try {
@@ -87,7 +74,7 @@ export const AdminNavigation: React.FC<AdminNavigationProps> = ({ showToast }) =
     });
   };
 
-  if (isLoading || !nav) {
+  if (!nav) {
     return <div className="p-8 text-center text-xs text-[#557060] bg-white rounded-3xl">Loading Navigation...</div>;
   }
 
