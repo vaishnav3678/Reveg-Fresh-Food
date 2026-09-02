@@ -1,93 +1,106 @@
--- RevEg Fresh Foods Supabase PostgreSQL Database Schema
--- Run this script in the Supabase SQL Editor to initialize all tables and policies.
+-- ==============================================================================
+-- RevEg Fresh Foods - Complete Supabase PostgreSQL Schema
+-- Run this in your Supabase SQL Editor: Dashboard -> SQL Editor -> New Query
+-- ==============================================================================
 
--- 1. Enable UUID extension if needed
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- 2. PRODUCTS TABLE
+-- 1. Create Products Table
 CREATE TABLE IF NOT EXISTS public.reveg_products (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   category TEXT NOT NULL,
   secondary_categories JSONB DEFAULT '[]'::jsonb,
-  description TEXT,
-  short_description TEXT,
-  badge TEXT,
-  package_sizes JSONB DEFAULT '[]'::jsonb,
-  is_featured BOOLEAN DEFAULT false,
-  is_best_seller BOOLEAN DEFAULT false,
-  is_new BOOLEAN DEFAULT false,
-  image TEXT,
-  images JSONB DEFAULT '[]'::jsonb,
-  price_guide TEXT,
+  description TEXT DEFAULT '',
+  detailed_description TEXT DEFAULT '',
+  package_sizes JSONB DEFAULT '["250g", "500g", "1kg"]'::jsonb,
+  is_popular BOOLEAN DEFAULT false,
+  is_festive_special BOOLEAN DEFAULT false,
+  taste_profile TEXT DEFAULT '',
+  ingredients_highlight JSONB DEFAULT '[]'::jsonb,
+  texture TEXT DEFAULT '',
+  image TEXT DEFAULT '',
+  price_guide TEXT DEFAULT '',
   status TEXT DEFAULT 'active',
   sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now(),
-  updated_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 3. CATEGORIES TABLE
+-- 2. Create Categories Table
 CREATE TABLE IF NOT EXISTS public.reveg_categories (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  slug TEXT,
-  tagline TEXT,
-  description TEXT,
-  badge TEXT,
-  icon_name TEXT,
+  slug TEXT NOT NULL,
+  tagline TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  badge TEXT DEFAULT '',
+  icon_name TEXT DEFAULT '',
   items JSONB DEFAULT '[]'::jsonb,
   sample_products JSONB DEFAULT '[]'::jsonb,
   status TEXT DEFAULT 'active',
   sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 4. GALLERY TABLE
+-- 3. Create Photo Gallery Table
 CREATE TABLE IF NOT EXISTS public.reveg_gallery (
   id TEXT PRIMARY KEY,
   title TEXT NOT NULL,
-  category TEXT,
+  category TEXT DEFAULT '',
   image TEXT NOT NULL,
-  description TEXT,
+  description TEXT DEFAULT '',
   is_enabled BOOLEAN DEFAULT true,
   sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 5. TESTIMONIALS TABLE
+-- 4. Create Customer Reviews / Testimonials Table
 CREATE TABLE IF NOT EXISTS public.reveg_testimonials (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  designation TEXT,
-  location TEXT,
-  avatar TEXT,
+  designation TEXT DEFAULT '',
+  location TEXT DEFAULT '',
+  avatar TEXT DEFAULT '',
   rating INTEGER DEFAULT 5,
   comment TEXT NOT NULL,
-  event TEXT,
+  event TEXT DEFAULT '',
   is_approved BOOLEAN DEFAULT true,
   sort_order INTEGER DEFAULT 0,
-  created_at TIMESTAMPTZ DEFAULT now()
+  created_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 6. MEDIA LIBRARY TABLE
+-- 5. Create Media Library Table
 CREATE TABLE IF NOT EXISTS public.reveg_media (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
-  original_name TEXT,
+  original_name TEXT DEFAULT '',
   url TEXT NOT NULL,
   size INTEGER DEFAULT 0,
-  mime_type TEXT,
-  uploaded_at TIMESTAMPTZ DEFAULT now()
+  mime_type TEXT DEFAULT 'image/jpeg',
+  uploaded_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 7. SITE CONFIGURATIONS TABLE (Key-Value JSONB for hero, about, settings, theme, navigation, footer, seo, sections, etc.)
+-- 6. Create Dynamic Site Configs Table (Hero, About, Settings, Theme, Navigation, Footer, SEO, Sections)
 CREATE TABLE IF NOT EXISTS public.reveg_site_configs (
   key TEXT PRIMARY KEY,
   value JSONB NOT NULL,
-  updated_at TIMESTAMPTZ DEFAULT now()
+  updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
--- 8. Enable Row Level Security (RLS) on all tables
+-- ==============================================================================
+-- INDEXES FOR MAXIMUM QUERY PERFORMANCE
+-- ==============================================================================
+CREATE INDEX IF NOT EXISTS idx_reveg_products_category ON public.reveg_products(category);
+CREATE INDEX IF NOT EXISTS idx_reveg_products_status ON public.reveg_products(status);
+CREATE INDEX IF NOT EXISTS idx_reveg_products_sort_order ON public.reveg_products(sort_order);
+CREATE INDEX IF NOT EXISTS idx_reveg_categories_sort_order ON public.reveg_categories(sort_order);
+CREATE INDEX IF NOT EXISTS idx_reveg_gallery_sort_order ON public.reveg_gallery(sort_order);
+CREATE INDEX IF NOT EXISTS idx_reveg_testimonials_sort_order ON public.reveg_testimonials(sort_order);
+
+-- ==============================================================================
+-- ROW LEVEL SECURITY (RLS) POLICIES
+-- Enable public read and write access using the Anon Key
+-- ==============================================================================
 ALTER TABLE public.reveg_products ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reveg_categories ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reveg_gallery ENABLE ROW LEVEL SECURITY;
@@ -95,36 +108,58 @@ ALTER TABLE public.reveg_testimonials ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reveg_media ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.reveg_site_configs ENABLE ROW LEVEL SECURITY;
 
--- 9. Create public access policies for anon/authenticated roles
+-- Products Policies
+DROP POLICY IF EXISTS "Public full access products" ON public.reveg_products;
+CREATE POLICY "Public full access products" ON public.reveg_products FOR ALL USING (true) WITH CHECK (true);
+
+-- Categories Policies
+DROP POLICY IF EXISTS "Public full access categories" ON public.reveg_categories;
+CREATE POLICY "Public full access categories" ON public.reveg_categories FOR ALL USING (true) WITH CHECK (true);
+
+-- Gallery Policies
+DROP POLICY IF EXISTS "Public full access gallery" ON public.reveg_gallery;
+CREATE POLICY "Public full access gallery" ON public.reveg_gallery FOR ALL USING (true) WITH CHECK (true);
+
+-- Testimonials Policies
+DROP POLICY IF EXISTS "Public full access testimonials" ON public.reveg_testimonials;
+CREATE POLICY "Public full access testimonials" ON public.reveg_testimonials FOR ALL USING (true) WITH CHECK (true);
+
+-- Media Policies
+DROP POLICY IF EXISTS "Public full access media" ON public.reveg_media;
+CREATE POLICY "Public full access media" ON public.reveg_media FOR ALL USING (true) WITH CHECK (true);
+
+-- Site Configs Policies
+DROP POLICY IF EXISTS "Public full access site configs" ON public.reveg_site_configs;
+CREATE POLICY "Public full access site configs" ON public.reveg_site_configs FOR ALL USING (true) WITH CHECK (true);
+
+-- ==============================================================================
+-- SUPABASE REALTIME ENABLEMENT
+-- Enables instant live updates to all connected devices on changes
+-- ==============================================================================
 DO $$
 BEGIN
-  -- Products policy
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'reveg_products' AND policyname = 'Allow public access to reveg_products') THEN
-    CREATE POLICY "Allow public access to reveg_products" ON public.reveg_products FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-
-  -- Categories policy
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'reveg_categories' AND policyname = 'Allow public access to reveg_categories') THEN
-    CREATE POLICY "Allow public access to reveg_categories" ON public.reveg_categories FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-
-  -- Gallery policy
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'reveg_gallery' AND policyname = 'Allow public access to reveg_gallery') THEN
-    CREATE POLICY "Allow public access to reveg_gallery" ON public.reveg_gallery FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-
-  -- Testimonials policy
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'reveg_testimonials' AND policyname = 'Allow public access to reveg_testimonials') THEN
-    CREATE POLICY "Allow public access to reveg_testimonials" ON public.reveg_testimonials FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-
-  -- Media policy
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'reveg_media' AND policyname = 'Allow public access to reveg_media') THEN
-    CREATE POLICY "Allow public access to reveg_media" ON public.reveg_media FOR ALL USING (true) WITH CHECK (true);
-  END IF;
-
-  -- Site configs policy
-  IF NOT EXISTS (SELECT 1 FROM pg_policies WHERE tablename = 'reveg_site_configs' AND policyname = 'Allow public access to reveg_site_configs') THEN
-    CREATE POLICY "Allow public access to reveg_site_configs" ON public.reveg_site_configs FOR ALL USING (true) WITH CHECK (true);
-  END IF;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_products;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_categories;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_gallery;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_testimonials;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_media;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_site_configs;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
 END $$;

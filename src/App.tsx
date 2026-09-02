@@ -102,37 +102,48 @@ function PublicWebsite({ onOpenAdmin }: { onOpenAdmin: () => void }) {
 
 // Main App with Global State Providers
 export default function App() {
-  const [isAdminView, setIsAdminView] = useState<boolean>(() => {
-    if (typeof window !== 'undefined') {
-      return (
-        window.location.pathname.startsWith('/admin') ||
-        window.location.hash === '#admin'
-      );
-    }
-    return false;
-  });
+  const checkIsAdmin = () => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    return (
+      path === '/admin' ||
+      path.endsWith('/admin') ||
+      path.includes('/admin/') ||
+      hash === '#admin' ||
+      hash.startsWith('#/admin')
+    );
+  };
+
+  const [isAdminView, setIsAdminView] = useState<boolean>(checkIsAdmin);
 
   useEffect(() => {
-    const handleHashChange = () => {
-      if (window.location.hash === '#admin' || window.location.pathname.startsWith('/admin')) {
-        setIsAdminView(true);
-      }
+    const handleLocationChange = () => {
+      setIsAdminView(checkIsAdmin());
     };
-    window.addEventListener('hashchange', handleHashChange);
-    window.addEventListener('popstate', handleHashChange);
+    window.addEventListener('hashchange', handleLocationChange);
+    window.addEventListener('popstate', handleLocationChange);
     return () => {
-      window.removeEventListener('hashchange', handleHashChange);
-      window.removeEventListener('popstate', handleHashChange);
+      window.removeEventListener('hashchange', handleLocationChange);
+      window.removeEventListener('popstate', handleLocationChange);
     };
   }, []);
 
   const openAdmin = () => {
-    window.location.hash = '#admin';
+    if (window.history && window.history.pushState) {
+      window.history.pushState({}, '', '/admin');
+    } else {
+      window.location.hash = '#admin';
+    }
     setIsAdminView(true);
   };
 
   const closeAdmin = () => {
-    window.location.hash = '';
+    if (window.history && window.history.pushState) {
+      window.history.pushState({}, '', '/');
+    } else {
+      window.location.hash = '';
+    }
     setIsAdminView(false);
   };
 

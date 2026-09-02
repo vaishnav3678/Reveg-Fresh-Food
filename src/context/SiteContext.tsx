@@ -86,8 +86,10 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, []);
 
-  const fetchSiteData = useCallback(async () => {
-    setIsLoading(true);
+  const fetchSiteData = useCallback(async (isInitial = false) => {
+    if (isInitial) {
+      setIsLoading(true);
+    }
     setError(null);
     try {
       // 1. Primary Source of Truth: Supabase PostgreSQL
@@ -96,11 +98,10 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const supabaseData = await fetchAllDataFromSupabase();
         setData(supabaseData);
         applyDomSettings(supabaseData);
-        setIsLoading(false);
         return;
       }
 
-      // 2. Secondary: If Express server has database API running
+      // 2. Secondary: If Express server has database API running (dev fallback)
       try {
         const res = await fetch('/api/public-content');
         if (res.ok) {
@@ -109,12 +110,11 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
             const json: PublicSiteData = await res.json();
             setData(json);
             applyDomSettings(json);
-            setIsLoading(false);
             return;
           }
         }
       } catch {
-        // Express not answering
+        // Express not answering (expected in static Vite deployment on Hostinger)
       }
 
       // 3. Fallback to initial structured data
@@ -126,27 +126,57 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setData(INITIAL_SITE_DATA);
       applyDomSettings(INITIAL_SITE_DATA);
     } finally {
-      setIsLoading(false);
+      if (isInitial) {
+        setIsLoading(false);
+      }
     }
   }, [applyDomSettings]);
 
   useEffect(() => {
-    fetchSiteData();
+    // Initial fetch
+    fetchSiteData(true);
 
-    // Setup Supabase Realtime subscription if client exists
+    // 1. Setup Supabase Realtime subscription for instant live events
     const client = getSupabaseClient();
+    let channel: any = null;
     if (client) {
-      const channel = client
-        .channel('reveg_realtime_changes')
+      channel = client
+        .channel('reveg_realtime_sync')
         .on('postgres_changes', { event: '*', schema: 'public' }, () => {
-          fetchSiteData();
+          fetchSiteData(false);
         })
         .subscribe();
-
-      return () => {
-        client.removeChannel(channel);
-      };
     }
+
+    // 2. Periodic polling: every 5 seconds while page/tab is visible
+    const pollInterval = setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
+        fetchSiteData(false);
+      }
+    }, 5000);
+
+    // 3. Active tab / Window focus listeners
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        fetchSiteData(false);
+      }
+    };
+
+    const handleFocus = () => {
+      fetchSiteData(false);
+    };
+
+    window.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      if (client && channel) {
+        client.removeChannel(channel);
+      }
+      clearInterval(pollInterval);
+      window.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('focus', handleFocus);
+    };
   }, [fetchSiteData]);
 
   const updateSiteData = useCallback(

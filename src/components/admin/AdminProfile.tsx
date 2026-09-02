@@ -1,17 +1,138 @@
 import React, { useState } from 'react';
-import { KeyRound, User, Lock, Save, ShieldCheck, AlertCircle, RotateCcw } from 'lucide-react';
+import { KeyRound, User, Lock, Save, ShieldCheck, AlertCircle, RotateCcw, Database, CheckCircle2, Copy, FileCode2, Globe, ServerOff, UploadCloud } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { useSiteData } from '../../context/SiteContext';
 import { resetStoredSiteData } from '../../utils/localStore';
 import { supabaseResetToDefault } from '../../services/supabaseService';
+import { isSupabaseConfigured } from '../../lib/supabase';
 
 interface AdminProfileProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
 }
 
+const SUPABASE_SCHEMA_SQL = `-- ==============================================================================
+-- RevEg Fresh Foods - Complete Supabase PostgreSQL Schema
+-- Run this in your Supabase SQL Editor: Dashboard -> SQL Editor -> New Query
+-- ==============================================================================
+
+CREATE TABLE IF NOT EXISTS public.reveg_products (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  category TEXT NOT NULL,
+  secondary_categories JSONB DEFAULT '[]'::jsonb,
+  description TEXT DEFAULT '',
+  detailed_description TEXT DEFAULT '',
+  package_sizes JSONB DEFAULT '["250g", "500g", "1kg"]'::jsonb,
+  is_popular BOOLEAN DEFAULT false,
+  is_festive_special BOOLEAN DEFAULT false,
+  taste_profile TEXT DEFAULT '',
+  ingredients_highlight JSONB DEFAULT '[]'::jsonb,
+  texture TEXT DEFAULT '',
+  image TEXT DEFAULT '',
+  price_guide TEXT DEFAULT '',
+  status TEXT DEFAULT 'active',
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.reveg_categories (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  slug TEXT NOT NULL,
+  tagline TEXT DEFAULT '',
+  description TEXT DEFAULT '',
+  badge TEXT DEFAULT '',
+  icon_name TEXT DEFAULT '',
+  items JSONB DEFAULT '[]'::jsonb,
+  sample_products JSONB DEFAULT '[]'::jsonb,
+  status TEXT DEFAULT 'active',
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.reveg_gallery (
+  id TEXT PRIMARY KEY,
+  title TEXT NOT NULL,
+  category TEXT DEFAULT '',
+  image TEXT NOT NULL,
+  description TEXT DEFAULT '',
+  is_enabled BOOLEAN DEFAULT true,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.reveg_testimonials (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  designation TEXT DEFAULT '',
+  location TEXT DEFAULT '',
+  avatar TEXT DEFAULT '',
+  rating INTEGER DEFAULT 5,
+  comment TEXT NOT NULL,
+  event TEXT DEFAULT '',
+  is_approved BOOLEAN DEFAULT true,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.reveg_media (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  original_name TEXT DEFAULT '',
+  url TEXT NOT NULL,
+  size INTEGER DEFAULT 0,
+  mime_type TEXT DEFAULT 'image/jpeg',
+  uploaded_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.reveg_site_configs (
+  key TEXT PRIMARY KEY,
+  value JSONB NOT NULL,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Row Level Security (RLS) Policies
+ALTER TABLE public.reveg_products ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reveg_categories ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reveg_gallery ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reveg_testimonials ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reveg_media ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.reveg_site_configs ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Public full access products" ON public.reveg_products;
+CREATE POLICY "Public full access products" ON public.reveg_products FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public full access categories" ON public.reveg_categories;
+CREATE POLICY "Public full access categories" ON public.reveg_categories FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public full access gallery" ON public.reveg_gallery;
+CREATE POLICY "Public full access gallery" ON public.reveg_gallery FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public full access testimonials" ON public.reveg_testimonials;
+CREATE POLICY "Public full access testimonials" ON public.reveg_testimonials FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public full access media" ON public.reveg_media;
+CREATE POLICY "Public full access media" ON public.reveg_media FOR ALL USING (true) WITH CHECK (true);
+
+DROP POLICY IF EXISTS "Public full access site configs" ON public.reveg_site_configs;
+CREATE POLICY "Public full access site configs" ON public.reveg_site_configs FOR ALL USING (true) WITH CHECK (true);
+
+-- Enable Supabase Realtime
+DO $$
+BEGIN
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_products; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_categories; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_gallery; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_testimonials; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_media; EXCEPTION WHEN duplicate_object THEN NULL; END;
+  BEGIN ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_site_configs; EXCEPTION WHEN duplicate_object THEN NULL; END;
+END $$;`;
+
 export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
   const { user, authFetch } = useAdminAuth();
-  const { refreshData } = useSiteData();
+  const { refreshData, isSupabaseActive } = useSiteData();
 
   // Profile Form
   const [profileName, setProfileName] = useState(user?.name || 'Administrator');
@@ -27,6 +148,14 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
 
   // Reset Demo
   const [isResetting, setIsResetting] = useState(false);
+  const [copiedSql, setCopiedSql] = useState(false);
+
+  const handleCopySql = () => {
+    navigator.clipboard.writeText(SUPABASE_SCHEMA_SQL);
+    setCopiedSql(true);
+    showToast('success', 'Supabase SQL schema copied to clipboard');
+    setTimeout(() => setCopiedSql(false), 3000);
+  };
 
   const handleUpdateProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -249,6 +378,124 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
 
       </div>
 
+      {/* Supabase Cloud Database Info & SQL Schema */}
+      <div className="bg-white p-6 sm:p-8 rounded-3xl border border-[#D5E8DA] shadow-sm space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-[#E8F2EA] pb-4">
+          <div className="flex items-center gap-3 text-[#0D5B29]">
+            <Database className="w-6 h-6 text-[#E8590C]" />
+            <div>
+              <h3 className="font-cinzel text-base sm:text-lg font-bold text-[#11311D]">
+                Supabase PostgreSQL Cloud Database
+              </h3>
+              <p className="text-[11px] text-[#557060]">
+                Single permanent source of truth for all products, prices, categories, and website settings.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span
+              className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold ${
+                isSupabaseConfigured()
+                  ? 'bg-emerald-100 text-emerald-800'
+                  : 'bg-amber-100 text-amber-800'
+              }`}
+            >
+              <span className={`w-2 h-2 rounded-full ${isSupabaseConfigured() ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'}`} />
+              <span>{isSupabaseConfigured() ? 'Supabase Active & Live Syncing' : 'Standby / Demo Data Active'}</span>
+            </span>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className="p-4 rounded-2xl bg-[#FAF8F2] border border-[#E3EDE6]">
+            <span className="text-[10px] uppercase font-bold text-[#557060] block mb-1">Architecture</span>
+            <p className="text-xs font-bold text-[#0D5B29]">Direct Supabase Client</p>
+            <p className="text-[11px] text-[#557060] mt-1">
+              Zero dependency on Node/Express server in production. Static Vite build on Hostinger talks directly to Supabase.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-[#FAF8F2] border border-[#E3EDE6]">
+            <span className="text-[10px] uppercase font-bold text-[#557060] block mb-1">Real-Time Sync</span>
+            <p className="text-xs font-bold text-[#E8590C]">Realtime Channel + 5s Poll</p>
+            <p className="text-[11px] text-[#557060] mt-1">
+              Changes published in Admin instantly push to all active mobile & desktop browsers.
+            </p>
+          </div>
+
+          <div className="p-4 rounded-2xl bg-[#FAF8F2] border border-[#E3EDE6]">
+            <span className="text-[10px] uppercase font-bold text-[#557060] block mb-1">Target Hosting</span>
+            <p className="text-xs font-bold text-[#11311D]">Hostinger /public_html/site2</p>
+            <p className="text-[11px] text-[#557060] mt-1">
+              Fully configured with Apache <code className="text-[#0D5B29]">.htaccess</code> for clean SPA routing at <code className="text-[#0D5B29]">site2.appwik.com</code>.
+            </p>
+          </div>
+        </div>
+
+        {/* SQL Schema Copier */}
+        <div className="p-4 rounded-2xl bg-[#083E1B] text-white flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <FileCode2 className="w-6 h-6 text-[#F5A800] shrink-0" />
+            <div>
+              <p className="text-xs font-bold text-white">Supabase PostgreSQL SQL Schema</p>
+              <p className="text-[11px] text-[#C8DED0]">
+                Copy & paste this script into your Supabase Dashboard SQL Editor to initialize all tables & realtime replication.
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            onClick={handleCopySql}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#E8590C] hover:bg-[#CC4B04] text-white text-xs font-bold transition-all shrink-0"
+          >
+            {copiedSql ? <CheckCircle2 className="w-4 h-4 text-white" /> : <Copy className="w-4 h-4" />}
+            <span>{copiedSql ? 'SQL Copied!' : 'Copy SQL Schema'}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Hostinger FileZilla Deployment Guide */}
+      <div className="bg-[#FAF8F2] p-6 sm:p-8 rounded-3xl border border-[#D5E8DA] shadow-sm space-y-4">
+        <div className="flex items-center gap-2.5 text-[#0D5B29]">
+          <UploadCloud className="w-5 h-5 text-[#E8590C]" />
+          <h3 className="font-cinzel text-base font-bold text-[#11311D]">
+            Hostinger FileZilla Deployment Instructions
+          </h3>
+        </div>
+
+        <p className="text-xs text-[#557060] leading-relaxed">
+          Follow these 3 quick steps to deploy this application to your Hostinger server at <strong className="text-[#11311D]">https://site2.appwik.com/</strong>:
+        </p>
+
+        <div className="space-y-2.5 text-xs text-[#11311D]">
+          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-white border border-[#E3EDE6]">
+            <span className="w-5 h-5 rounded-full bg-[#0D5B29] text-white font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">1</span>
+            <div>
+              <p className="font-bold text-[#0D5B29]">Run Build Command</p>
+              <p className="text-[11px] text-[#557060]">Execute <code className="bg-[#FAF8F2] px-1.5 py-0.5 rounded text-[#E8590C]">npm run build</code> in the project directory. This compiles the static assets into the <code className="text-[#0D5B29]">dist/</code> directory and copies <code className="text-[#0D5B29]">.htaccess</code> automatically.</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-white border border-[#E3EDE6]">
+            <span className="w-5 h-5 rounded-full bg-[#0D5B29] text-white font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">2</span>
+            <div>
+              <p className="font-bold text-[#0D5B29]">Upload via FileZilla</p>
+              <p className="text-[11px] text-[#557060]">Open FileZilla, connect to Hostinger FTP/SFTP, navigate to <code className="bg-[#FAF8F2] px-1.5 py-0.5 rounded text-[#E8590C]">/public_html/site2</code>, and upload ONLY the contents inside the <code className="text-[#0D5B29]">dist/</code> folder (including <code className="text-[#0D5B29]">.htaccess</code>).</p>
+            </div>
+          </div>
+
+          <div className="flex items-start gap-2.5 p-3 rounded-xl bg-white border border-[#E3EDE6]">
+            <span className="w-5 h-5 rounded-full bg-[#0D5B29] text-white font-bold flex items-center justify-center text-[10px] shrink-0 mt-0.5">3</span>
+            <div>
+              <p className="font-bold text-[#0D5B29]">Zero Server Maintenance</p>
+              <p className="text-[11px] text-[#557060]">Your website at <strong className="text-[#11311D]">https://site2.appwik.com/</strong> and Admin Panel at <strong className="text-[#11311D]">https://site2.appwik.com/admin</strong> are now 100% database-driven. Any edits made in Admin are instantly saved to Supabase and show up on the public website without uploading files again!</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Database Reset Option */}
       <div className="bg-red-50/70 p-6 sm:p-8 rounded-3xl border border-red-200 space-y-4">
         <div className="flex items-center gap-2 text-red-700">
@@ -256,7 +503,7 @@ export const AdminProfile: React.FC<AdminProfileProps> = ({ showToast }) => {
           <h3 className="font-cinzel text-base font-bold">Reset Database to Default State</h3>
         </div>
         <p className="text-xs text-red-800 leading-relaxed">
-          If you ever need to restore all original products, Diwali faral items, photo gallery, testimonials, and brand configuration to the pristine default state, click the button below.
+          If you ever need to restore all original products, Diwali faral items, photo gallery, testimonials, and brand configuration to the pristine default state in Supabase, click the button below.
         </p>
 
         <button
