@@ -87,6 +87,52 @@ CREATE TABLE IF NOT EXISTS public.reveg_site_configs (
   updated_at TIMESTAMPTZ DEFAULT NOW()
 );
 
+-- 7. Create Customer Inquiries Table (CRM System)
+-- Note: We create both `reveg_inquiries` and `inquiries` to support standard or prefixed naming
+CREATE TABLE IF NOT EXISTS public.reveg_inquiries (
+  id TEXT PRIMARY KEY,
+  inquiry_id TEXT NOT NULL UNIQUE,
+  customer_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT DEFAULT '',
+  product TEXT DEFAULT '',
+  quantity TEXT DEFAULT '',
+  message TEXT NOT NULL,
+  status TEXT DEFAULT 'new', -- 'new', 'contacted', 'pending', 'completed', 'cancelled'
+  source TEXT DEFAULT 'website',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS public.inquiries (
+  id TEXT PRIMARY KEY,
+  inquiry_id TEXT NOT NULL UNIQUE,
+  customer_name TEXT NOT NULL,
+  phone TEXT NOT NULL,
+  email TEXT DEFAULT '',
+  product TEXT DEFAULT '',
+  quantity TEXT DEFAULT '',
+  message TEXT NOT NULL,
+  status TEXT DEFAULT 'new',
+  source TEXT DEFAULT 'website',
+  created_at TIMESTAMPTZ DEFAULT NOW(),
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Full replica identity ensures old record is transmitted on Realtime UPDATE and DELETE
+ALTER TABLE public.reveg_inquiries REPLICA IDENTITY FULL;
+ALTER TABLE public.inquiries REPLICA IDENTITY FULL;
+
+CREATE INDEX IF NOT EXISTS idx_reveg_inquiries_status ON public.reveg_inquiries(status);
+CREATE INDEX IF NOT EXISTS idx_reveg_inquiries_created_at ON public.reveg_inquiries(created_at);
+CREATE INDEX IF NOT EXISTS idx_reveg_inquiries_phone ON public.reveg_inquiries(phone);
+CREATE INDEX IF NOT EXISTS idx_reveg_inquiries_inquiry_id ON public.reveg_inquiries(inquiry_id);
+
+CREATE INDEX IF NOT EXISTS idx_inquiries_status ON public.inquiries(status);
+CREATE INDEX IF NOT EXISTS idx_inquiries_created_at ON public.inquiries(created_at);
+CREATE INDEX IF NOT EXISTS idx_inquiries_phone ON public.inquiries(phone);
+CREATE INDEX IF NOT EXISTS idx_inquiries_inquiry_id ON public.inquiries(inquiry_id);
+
 -- ==============================================================================
 -- INDEXES FOR MAXIMUM QUERY PERFORMANCE
 -- ==============================================================================
@@ -132,6 +178,15 @@ CREATE POLICY "Public full access media" ON public.reveg_media FOR ALL USING (tr
 DROP POLICY IF EXISTS "Public full access site configs" ON public.reveg_site_configs;
 CREATE POLICY "Public full access site configs" ON public.reveg_site_configs FOR ALL USING (true) WITH CHECK (true);
 
+-- Inquiries Policies
+ALTER TABLE public.reveg_inquiries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public full access reveg_inquiries" ON public.reveg_inquiries;
+CREATE POLICY "Public full access reveg_inquiries" ON public.reveg_inquiries FOR ALL USING (true) WITH CHECK (true);
+
+ALTER TABLE public.inquiries ENABLE ROW LEVEL SECURITY;
+DROP POLICY IF EXISTS "Public full access inquiries" ON public.inquiries;
+CREATE POLICY "Public full access inquiries" ON public.inquiries FOR ALL USING (true) WITH CHECK (true);
+
 -- ==============================================================================
 -- SUPABASE REALTIME ENABLEMENT
 -- Enables instant live updates to all connected devices on changes
@@ -160,6 +215,14 @@ BEGIN
   END;
   BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_site_configs;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.reveg_inquiries;
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END;
+  BEGIN
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.inquiries;
   EXCEPTION WHEN duplicate_object THEN NULL;
   END;
 END $$;

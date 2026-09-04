@@ -43,3 +43,32 @@ export interface GalleryItem {
   image: string;
   description: string;
 }
+
+export type InquiryStatus = 'new' | 'contacted' | 'pending' | 'completed' | 'cancelled';
+
+export interface CustomerInquiry {
+  id: string;
+  inquiryId: string;
+  customerName: string;
+  phone: string;
+  email?: string;
+  product?: string;
+  quantity?: string;
+  message: string;
+  source: string;
+  status: InquiryStatus;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface InquiryStats {
+  total: number;
+  newCount: number;
+  pendingCount: number;
+  contactedCount: number;
+  completedCount: number;
+  cancelledCount: number;
+  todayCount: number;
+  thisWeekCount: number;
+  thisMonthCount: number;
+}

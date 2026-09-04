@@ -164,17 +164,25 @@ export interface TestimonialRecord {
   createdAt: string;
 }
 
-export interface EnquiryRecord {
+export type InquiryStatus = 'new' | 'contacted' | 'pending' | 'completed' | 'cancelled';
+
+export interface CustomerInquiry {
   id: string;
-  name: string;
+  inquiryId: string;
+  customerName: string;
+  phone: string;
   email?: string;
-  phone?: string;
-  inquiryType: string;
-  packSize?: string;
+  product?: string;
+  quantity?: string;
   message: string;
-  status: 'new' | 'read' | 'replied';
+  source: string;
+  status: InquiryStatus;
   createdAt: string;
+  updatedAt: string;
 }
+
+// Backward-compatible alias
+export type EnquiryRecord = CustomerInquiry;
 
 export interface NavigationConfig {
   menuItems: Array<{
@@ -236,6 +244,7 @@ export interface AppDatabase {
   navigation: NavigationConfig;
   footer: FooterConfig;
   media: MediaItem[];
+  supabase_config?: { url?: string; key?: string };
 }
 
 const DATA_DIR = path.join(process.cwd(), 'data');
@@ -683,26 +692,60 @@ const getDefaultDatabase = (): AppDatabase => {
     ],
     enquiries: [
       {
-        id: 'enq-101',
-        name: 'Pooja Patil',
+        id: 'inq-101',
+        inquiryId: 'INQ-2026-1048',
+        customerName: 'Pooja Patil',
         email: 'pooja.patil@example.com',
         phone: '+91 98220 12345',
-        inquiryType: 'Festive Faral & Sweets Order',
-        packSize: '2 kg - 5 kg',
-        message: 'Looking to order 2 kg Besan Ladoo, 1 kg Chakli and 1 kg Sweet Shankarpali for Diwali next week. Please share batch schedule.',
+        product: 'Festive Faral & Sweets Order',
+        quantity: '2 kg - 5 kg',
+        message: 'Looking to order 2 kg Besan Ladoo, 1 kg Chakli and 1 kg Sweet Shankarpali for Diwali next week. Please share batch schedule and pricing.',
+        source: 'Website Contact Form',
         status: 'new',
-        createdAt: new Date(Date.now() - 3600000 * 3).toISOString(),
+        createdAt: new Date(Date.now() - 3600000 * 2).toISOString(),
+        updatedAt: new Date(Date.now() - 3600000 * 2).toISOString(),
       },
       {
-        id: 'enq-102',
-        name: 'Vikram Joshi',
+        id: 'inq-102',
+        inquiryId: 'INQ-2026-1042',
+        customerName: 'Vikram Joshi',
         email: 'vikram.j@example.com',
         phone: '+91 98811 54321',
-        inquiryType: 'Bulk / Corporate Order Enquiry',
-        packSize: 'Bulk (10kg+)',
-        message: 'Enquiring for 50 custom gift hampers for our client appreciation event. Need assorted sweets and namkeen.',
-        status: 'read',
+        product: 'Custom Celebration Gift Box',
+        quantity: '50 Boxes',
+        message: 'Enquiring for 50 custom gift hampers for our client appreciation event. Need assorted sweets and namkeen with festive ribbons.',
+        source: 'Custom Gift Box Builder',
+        status: 'contacted',
+        createdAt: new Date(Date.now() - 86400000 * 1).toISOString(),
+        updatedAt: new Date(Date.now() - 3600000 * 5).toISOString(),
+      },
+      {
+        id: 'inq-103',
+        inquiryId: 'INQ-2026-1035',
+        customerName: 'Ananya Deshmukh',
+        email: 'ananya.d@gmail.com',
+        phone: '+91 94231 78901',
+        product: 'Bhajani Chakli & Poha Chivda',
+        quantity: '1 kg',
+        message: 'Can you deliver by this Friday to Pune? Need fresh crunchy chakli and diet poha chivda.',
+        source: 'Product Details Modal',
+        status: 'pending',
         createdAt: new Date(Date.now() - 86400000 * 2).toISOString(),
+        updatedAt: new Date(Date.now() - 86400000 * 1).toISOString(),
+      },
+      {
+        id: 'inq-104',
+        inquiryId: 'INQ-2026-1021',
+        customerName: 'Sanjay Shinde',
+        email: 'sanjay.shinde@corp.in',
+        phone: '+91 98200 98765',
+        product: 'Bulk Corporate Order',
+        quantity: '100 Boxes',
+        message: 'Corporate festive gifting requirement. Order confirmed and advance payment processed.',
+        source: 'Corporate Enquiry',
+        status: 'completed',
+        createdAt: new Date(Date.now() - 86400000 * 4).toISOString(),
+        updatedAt: new Date(Date.now() - 86400000 * 3).toISOString(),
       }
     ],
     navigation: {

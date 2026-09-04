@@ -26,9 +26,12 @@ import {
 } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { useSiteData } from '../../context/SiteContext';
+import { useInquiryRealtime } from '../../context/InquiryRealtimeContext';
+import { InquiryRealtimeBanner } from './InquiryRealtimeBanner';
 
 export type AdminTab =
   | 'dashboard'
+  | 'inquiries'
   | 'products'
   | 'categories'
   | 'homepage'
@@ -63,17 +66,19 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
 }) => {
   const { user, logout } = useAdminAuth();
   const { refreshData } = useSiteData();
+  const { stats, refreshInquiries } = useInquiryRealtime();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
 
   const handleRefresh = async () => {
     setIsRefreshing(true);
-    await refreshData();
+    await Promise.all([refreshData(), refreshInquiries()]);
     setTimeout(() => setIsRefreshing(false), 500);
   };
 
   const navItems: Array<{ id: AdminTab; label: string; icon: any; badge?: number; group?: string }> = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, group: 'General' },
+    { id: 'inquiries', label: 'Customer Inquiries', icon: Inbox, badge: stats.newCount, group: 'General' },
 
     { id: 'products', label: 'Products', icon: ShoppingBag, group: 'Catalog' },
     { id: 'categories', label: 'Categories', icon: Layers, group: 'Catalog' },
@@ -266,6 +271,8 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
           </div>
 
           <div className="flex items-center gap-3">
+            <InquiryRealtimeBanner onNavigateTab={onTabChange} />
+
             <button
               onClick={handleRefresh}
               title="Refresh public site cache"

@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { X, MessageCircle, Sparkles, Check, Package, Scale, Heart, ShieldAlert } from 'lucide-react';
-import { Product } from '../types';
+import { X, MessageCircle, Sparkles, Check, Package, Scale, Heart, ShieldAlert, CheckCircle2, RotateCcw } from 'lucide-react';
+import { Product, CustomerInquiry } from '../types';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
+import { submitDualChannelInquiry } from '../services/inquirySubmissionService';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -17,14 +18,40 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
   if (!product) return null;
 
   const [selectedPack, setSelectedPack] = useState<string>(product.packSizes[0] || '500g');
+  const [customerName, setCustomerName] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
   const [customNote, setCustomNote] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submittedInquiry, setSubmittedInquiry] = useState<CustomerInquiry | null>(null);
 
-  const handleWhatsAppEnquire = () => {
-    let msg = WhatsAppMessages.productInquiry(product.name, selectedPack);
-    if (customNote.trim()) {
-      msg += ` Note: ${customNote.trim()}`;
+  const handleWhatsAppEnquire = async () => {
+    setIsSubmitting(true);
+    try {
+      const name = customerName.trim() || 'Food Connoisseur';
+      const phone = customerPhone.trim() || whatsappNum;
+      const note = customNote.trim();
+      const message = note
+        ? `Inquiry for ${product.name} (${selectedPack}). Note: ${note}`
+        : `Inquiry for fresh batch of ${product.name} (${selectedPack}). Please share current pricing and delivery timeframe.`;
+
+      const result = await submitDualChannelInquiry(
+        {
+          customerName: name,
+          phone: phone,
+          product: `${product.name} (${selectedPack})`,
+          quantity: selectedPack,
+          message,
+          source: 'Product Details Modal',
+        },
+        whatsappNum
+      );
+
+      setSubmittedInquiry(result.inquiry);
+    } catch (err) {
+      console.error('Product inquiry submission error:', err);
+    } finally {
+      setIsSubmitting(false);
     }
-    window.open(getWhatsAppUrl(msg, whatsappNum), '_blank');
   };
 
   return (
@@ -137,9 +164,33 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                 </div>
               </div>
 
+              {/* Customer Contact Details */}
+              <div className="mt-3 grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] font-bold text-[#0D5B29] uppercase mb-1">Your Name</label>
+                  <input
+                    type="text"
+                    value={customerName}
+                    onChange={(e) => setCustomerName(e.target.value)}
+                    placeholder="e.g. Rahul Patil"
+                    className="w-full text-xs p-2 rounded-xl bg-[#FAF8F2] border border-[#D5E8DA] text-[#11311D] focus:outline-none focus:ring-1 focus:ring-[#0D5B29]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-[#0D5B29] uppercase mb-1">WhatsApp No.</label>
+                  <input
+                    type="tel"
+                    value={customerPhone}
+                    onChange={(e) => setCustomerPhone(e.target.value)}
+                    placeholder="e.g. 9876543210"
+                    className="w-full text-xs p-2 rounded-xl bg-[#FAF8F2] border border-[#D5E8DA] text-[#11311D] focus:outline-none focus:ring-1 focus:ring-[#0D5B29]"
+                  />
+                </div>
+              </div>
+
               {/* Optional Custom Note */}
-              <div className="mt-4">
-                <label className="block text-[11px] font-semibold text-[#557060] mb-1">
+              <div className="mt-3">
+                <label className="block text-[10px] font-bold uppercase tracking-wider text-[#557060] mb-1">
                   Custom instructions / occasion (optional):
                 </label>
                 <input
@@ -147,12 +198,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
                   value={customNote}
                   onChange={(e) => setCustomNote(e.target.value)}
                   placeholder="e.g. Festival gifting, less sweet, urgent delivery"
-                  className="w-full text-xs p-2.5 rounded-xl bg-[#FAF8F2] border border-[#D5E8DA] text-[#11311D] focus:outline-none focus:ring-1 focus:ring-[#0D5B29]"
+                  className="w-full text-xs p-2 rounded-xl bg-[#FAF8F2] border border-[#D5E8DA] text-[#11311D] focus:outline-none focus:ring-1 focus:ring-[#0D5B29]"
                 />
               </div>
 
               {/* Pricing Notice */}
-              <div className="mt-4 p-3 rounded-2xl bg-[#FEF9EC] border border-[#FDE5A3] flex items-center justify-between">
+              <div className="mt-3 p-3 rounded-2xl bg-[#FEF9EC] border border-[#FDE5A3] flex items-center justify-between">
                 <div>
                   <span className="block text-[10px] uppercase font-bold text-[#6E8A79]">Pricing</span>
                   <span className="text-xs sm:text-sm font-bold text-[#E8590C]">
@@ -167,14 +218,56 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
 
             {/* Modal Bottom CTA */}
             <div className="pt-2">
-              <button
-                id="modal-whatsapp-enquire-btn"
-                onClick={handleWhatsAppEnquire}
-                className="w-full inline-flex items-center justify-center gap-2 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-3 px-6 rounded-2xl font-bold text-sm shadow-xl transition-all duration-200 transform hover:scale-[1.02] border border-[#F5A800]/40"
-              >
-                <MessageCircle className="w-5 h-5 fill-white" />
-                <span>Enquire about {product.name} ({selectedPack})</span>
-              </button>
+              {submittedInquiry ? (
+                <div className="p-4 rounded-2xl bg-[#EBF5EE] border border-[#A3D9B1] space-y-2.5 animate-fadeIn">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Inquiry Registered in Central Database!</span>
+                  </div>
+                  <div className="text-[11px] text-gray-700">
+                    Reference ID: <strong className="font-mono text-emerald-800">{submittedInquiry.inquiryId}</strong>
+                  </div>
+                  <p className="text-[11px] text-gray-600">
+                    Saved to Supabase database & Admin Panel. WhatsApp chat initiated.
+                  </p>
+                  <div className="flex gap-2 pt-1">
+                    <a
+                      href={getWhatsAppUrl(
+                        WhatsAppMessages.productInquiry(product.name, selectedPack),
+                        whatsappNum
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-2.5 px-3 rounded-xl font-bold text-xs"
+                    >
+                      <MessageCircle className="w-4 h-4 fill-white" />
+                      <span>Re-open WhatsApp</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setSubmittedInquiry(null)}
+                      className="p-2.5 rounded-xl bg-white border border-[#D5E8DA] text-gray-700 text-xs hover:bg-[#FAF8F2]"
+                      title="Enquire again"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  id="modal-whatsapp-enquire-btn"
+                  disabled={isSubmitting}
+                  onClick={handleWhatsAppEnquire}
+                  className="w-full inline-flex items-center justify-center gap-2 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-3 px-6 rounded-2xl font-bold text-sm shadow-xl transition-all duration-200 transform hover:scale-[1.02] border border-[#F5A800]/40 disabled:opacity-50"
+                >
+                  <MessageCircle className="w-5 h-5 fill-white" />
+                  <span>
+                    {isSubmitting
+                      ? 'Saving to Database & WhatsApp...'
+                      : `Enquire about ${product.name} (${selectedPack})`}
+                  </span>
+                </button>
+              )}
             </div>
 
           </div>

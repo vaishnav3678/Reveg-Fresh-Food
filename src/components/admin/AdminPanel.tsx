@@ -17,6 +17,8 @@ import { AdminFooter } from './AdminFooter';
 import { AdminMedia } from './AdminMedia';
 import { AdminSeo } from './AdminSeo';
 import { AdminProfile } from './AdminProfile';
+import { AdminInquiries } from './AdminInquiries';
+import { InquiryRealtimeProvider } from '../../context/InquiryRealtimeContext';
 
 interface AdminPanelProps {
   onBackToPublicSite: () => void;
@@ -50,30 +52,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({ onBackToPublicSite }) =>
   }
 
   return (
-    <AdminLayout
-      activeTab={activeTab}
-      onTabChange={setActiveTab}
-      onViewLiveSite={onBackToPublicSite}
-      toastMessage={toast}
-      onClearToast={() => setToast(null)}
-    >
-      {activeTab === 'dashboard' && (
-        <AdminDashboard onNavigateTab={setActiveTab} onViewLiveSite={onBackToPublicSite} />
-      )}
-      {activeTab === 'products' && <AdminProducts showToast={showToast} />}
-      {activeTab === 'categories' && <AdminCategories showToast={showToast} />}
-      {activeTab === 'homepage' && <AdminHomepage showToast={showToast} />}
-      {activeTab === 'hero' && <AdminHero showToast={showToast} />}
-      {activeTab === 'about' && <AdminAbout showToast={showToast} />}
-      {activeTab === 'gallery' && <AdminGallery showToast={showToast} />}
-      {activeTab === 'testimonials' && <AdminTestimonials showToast={showToast} />}
-      {activeTab === 'settings' && <AdminSettings showToast={showToast} />}
-      {activeTab === 'theme' && <AdminTheme showToast={showToast} />}
-      {activeTab === 'navigation' && <AdminNavigation showToast={showToast} />}
-      {activeTab === 'footer' && <AdminFooter showToast={showToast} />}
-      {activeTab === 'media' && <AdminMedia showToast={showToast} />}
-      {activeTab === 'seo' && <AdminSeo showToast={showToast} />}
-      {activeTab === 'profile' && <AdminProfile showToast={showToast} />}
-    </AdminLayout>
+    <InquiryRealtimeProvider>
+      <AdminLayout
+        activeTab={activeTab}
+        onTabChange={setActiveTab}
+        onViewLiveSite={onBackToPublicSite}
+        toastMessage={toast}
+        onClearToast={() => setToast(null)}
+      >
+        {activeTab === 'dashboard' && (
+          <AdminDashboard onNavigateTab={setActiveTab} onViewLiveSite={onBackToPublicSite} />
+        )}
+        {activeTab === 'inquiries' && <AdminInquiries showToast={showToast} />}
+        {activeTab === 'products' && <AdminProducts showToast={showToast} />}
+        {activeTab === 'categories' && <AdminCategories showToast={showToast} />}
+        {activeTab === 'homepage' && <AdminHomepage showToast={showToast} />}
+        {activeTab === 'hero' && <AdminHero showToast={showToast} />}
+        {activeTab === 'about' && <AdminAbout showToast={showToast} />}
+        {activeTab === 'gallery' && <AdminGallery showToast={showToast} />}
+        {activeTab === 'testimonials' && <AdminTestimonials showToast={showToast} />}
+        {activeTab === 'settings' && <AdminSettings showToast={showToast} />}
+        {activeTab === 'theme' && <AdminTheme showToast={showToast} />}
+        {activeTab === 'navigation' && <AdminNavigation showToast={showToast} />}
+        {activeTab === 'footer' && <AdminFooter showToast={showToast} />}
+        {activeTab === 'media' && <AdminMedia showToast={showToast} />}
+        {activeTab === 'seo' && <AdminSeo showToast={showToast} />}
+        {activeTab === 'profile' && <AdminProfile showToast={showToast} />}
+      </AdminLayout>
+    </InquiryRealtimeProvider>
   );
 };
+

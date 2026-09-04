@@ -54,5 +54,55 @@ export const WhatsAppMessages = {
     if (notes) msg += `Details: ${notes}\n`;
     msg += `\nPlease share current prices, freshness assurance, and delivery schedule.`;
     return msg;
+  },
+
+  // Structured Customer Inquiry
+  customerInquiryMessage: (data: {
+    customerName: string;
+    phone: string;
+    email?: string;
+    product?: string;
+    quantity?: string;
+    message: string;
+    inquiryId: string;
+    date?: string;
+  }) => {
+    let msg = `*NEW CUSTOMER INQUIRY - REVEG FRESH FOODS*\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `*Inquiry ID:* ${data.inquiryId}\n`;
+    msg += `*Customer Name:* ${data.customerName}\n`;
+    msg += `*Mobile:* ${data.phone}\n`;
+    if (data.email) msg += `*Email:* ${data.email}\n`;
+    if (data.product) msg += `*Product/Food:* ${data.product}\n`;
+    if (data.quantity) msg += `*Quantity:* ${data.quantity}\n`;
+    msg += `*Inquiry:* ${data.message}\n`;
+    msg += `*Date:* ${data.date || new Date().toLocaleString('en-IN')}\n`;
+    msg += `━━━━━━━━━━━━━━━━━━━━━━\n`;
+    msg += `Please reply with current availability and pricing. Thank you!`;
+    return msg;
+  },
+
+  // Admin reply to customer
+  adminReplyToCustomer: (customerName: string, inquiryId: string, product?: string) => {
+    return `Hello ${customerName}, thank you for contacting RevEg Fresh Foods! We received your inquiry (${inquiryId})${product ? ` regarding ${product}` : ''}. We are happy to help you with pricing, fresh batch schedules, and delivery details.`;
   }
 };
+
+/**
+ * Direct helper for Admin reply to customer inquiry
+ */
+export function adminReplyToCustomer(
+  param: {
+    inquiryId: string;
+    customerName: string;
+    product?: string;
+    quantity?: string;
+  } | string,
+  inquiryId?: string,
+  product?: string
+): string {
+  if (typeof param === 'object') {
+    return `Hello ${param.customerName}, thank you for contacting RevEg Fresh Foods! We received your inquiry (${param.inquiryId})${param.product ? ` regarding ${param.product}` : ''}. We are happy to assist you with fresh batch availability, rates, and doorstep delivery.`;
+  }
+  return `Hello ${param}, thank you for contacting RevEg Fresh Foods! We received your inquiry (${inquiryId || ''})${product ? ` regarding ${product}` : ''}. We are happy to assist you with fresh batch availability, rates, and doorstep delivery.`;
+}

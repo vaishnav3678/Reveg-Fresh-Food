@@ -14,6 +14,7 @@ import {
   SectionConfig,
   MediaItem,
 } from '../server/db';
+import { CustomerInquiry, InquiryStatus } from '../types';
 import { INITIAL_SITE_DATA, StaticSiteData } from '../data/initialData';
 
 // Table names in Supabase PostgreSQL
@@ -24,6 +25,7 @@ export const TABLES = {
   TESTIMONIALS: 'reveg_testimonials',
   MEDIA: 'reveg_media',
   SITE_CONFIGS: 'reveg_site_configs',
+  INQUIRIES: 'reveg_inquiries',
 };
 
 // Data Transformers
@@ -520,3 +522,193 @@ export const supabaseResetToDefault = async (): Promise<{ success: boolean; erro
     return { success: false, error: err.message || 'Failed to reset Supabase data' };
   }
 };
+
+// ==============================================================================
+// CUSTOMER INQUIRIES SERVICE
+// ==============================================================================
+
+export const inquiryFromDB = (row: any): CustomerInquiry => ({
+  id: row.id,
+  inquiryId: row.inquiry_id || row.id,
+  customerName: row.customer_name || row.name || 'Anonymous Customer',
+  phone: row.phone || '',
+  email: row.email || '',
+  product: row.product || row.inquiry_type || '',
+  quantity: row.quantity || row.pack_size || '',
+  message: row.message || '',
+  source: row.source || 'Website',
+  status: (row.status as InquiryStatus) || 'new',
+  createdAt: row.created_at || new Date().toISOString(),
+  updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+});
+
+export const inquiryToDB = (inq: CustomerInquiry): any => ({
+  id: inq.id,
+  inquiry_id: inq.inquiryId,
+  customer_name: inq.customerName,
+  phone: inq.phone,
+  email: inq.email || '',
+  product: inq.product || '',
+  quantity: inq.quantity || '',
+  message: inq.message,
+  source: inq.source || 'Website',
+  status: inq.status || 'new',
+  created_at: inq.createdAt || new Date().toISOString(),
+  updated_at: inq.updatedAt || new Date().toISOString(),
+});
+
+export const supabaseFetchInquiries = async (): Promise<CustomerInquiry[]> => {
+  const client = getSupabaseClient();
+  if (!client) return [];
+
+  try {
+    // Attempt from reveg_inquiries first
+    const resPrimary = await client
+      .from(TABLES.INQUIRIES)
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!resPrimary.error && resPrimary.data && resPrimary.data.length > 0) {
+      return resPrimary.data.map(inquiryFromDB);
+    }
+
+    // Try inquiries table as alternative
+    const resAlt = await client
+      .from('inquiries')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (!resAlt.error && resAlt.data && resAlt.data.length > 0) {
+      return resAlt.data.map(inquiryFromDB);
+    }
+
+    if (resPrimary.data) {
+      return resPrimary.data.map(inquiryFromDB);
+    }
+    return [];
+  } catch (err) {
+    console.warn('Supabase fetch inquiries notice:', err);
+    return [];
+  }
+};
+
+export const supabaseSaveInquiry = async (
+  inquiry: CustomerInquiry
+): Promise<{ success: boolean; data?: CustomerInquiry; error?: string }> => {
+  const client = getSupabaseClient();
+  const dbRow = inquiryToDB(inquiry);
+
+  if (!client) {
+    return { success: true, data: inquiry };
+  }
+
+  let savedData: any = null;
+  let hasSuccess = false;
+
+  // 1. Insert into reveg_inquiries
+  try {
+    const { data, error } = await client
+      .from(TABLES.INQUIRIES)
+      .upsert(dbRow, { onConflict: 'id' })
+      .select()
+      .maybeSingle();
+
+    if (!error) {
+      hasSuccess = true;
+      if (data) savedData = data;
+    }
+  } catch (err) {
+    // Continue to inquiries table
+  }
+
+  // 2. Also insert into inquiries table for compatibility
+  try {
+    const { data, error } = await client
+      .from('inquiries')
+      .upsert(dbRow, { onConflict: 'id' })
+      .select()
+      .maybeSingle();
+
+    if (!error) {
+      hasSuccess = true;
+      if (!savedData && data) savedData = data;
+    }
+  } catch (err) {
+    // Table may not exist, non-blocking
+  }
+
+  if (hasSuccess) {
+    return { success: true, data: savedData ? inquiryFromDB(savedData) : inquiry };
+  }
+
+  return { success: false, error: 'Failed to save inquiry to Supabase tables' };
+};
+
+export const supabaseUpdateInquiryStatus = async (
+  id: string,
+  status: InquiryStatus
+): Promise<{ success: boolean; error?: string }> => {
+  const client = getSupabaseClient();
+  if (!client) return { success: true };
+
+  const updatedAt = new Date().toISOString();
+  let hasSuccess = false;
+
+  try {
+    const { error } = await client
+      .from(TABLES.INQUIRIES)
+      .update({ status, updated_at: updatedAt })
+      .or(`id.eq.${id},inquiry_id.eq.${id}`);
+
+    if (!error) hasSuccess = true;
+  } catch {
+    // Continue
+  }
+
+  try {
+    const { error } = await client
+      .from('inquiries')
+      .update({ status, updated_at: updatedAt })
+      .or(`id.eq.${id},inquiry_id.eq.${id}`);
+
+    if (!error) hasSuccess = true;
+  } catch {
+    // Continue
+  }
+
+  return { success: hasSuccess };
+};
+
+export const supabaseDeleteInquiry = async (
+  id: string
+): Promise<{ success: boolean; error?: string }> => {
+  const client = getSupabaseClient();
+  if (!client) return { success: true };
+
+  let hasSuccess = false;
+
+  try {
+    const { error } = await client
+      .from(TABLES.INQUIRIES)
+      .delete()
+      .or(`id.eq.${id},inquiry_id.eq.${id}`);
+
+    if (!error) hasSuccess = true;
+  } catch {
+    // Continue
+  }
+
+  try {
+    const { error } = await client
+      .from('inquiries')
+      .delete()
+      .or(`id.eq.${id},inquiry_id.eq.${id}`);
+
+    if (!error) hasSuccess = true;
+  } catch {
+    // Continue
+  }
+
+  return { success: hasSuccess };
+};
+

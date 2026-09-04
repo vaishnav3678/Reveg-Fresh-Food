@@ -1,13 +1,16 @@
 import React, { useState } from 'react';
-import { Gift, Sparkles, Check, Plus, MessageCircle, Package, ArrowRight } from 'lucide-react';
+import { Gift, Sparkles, Check, Plus, MessageCircle, Package, ArrowRight, CheckCircle2, RotateCcw } from 'lucide-react';
 import { GIFT_BOX_TIERS } from '../data/foodData';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
+import { submitDualChannelInquiry } from '../services/inquirySubmissionService';
+import { CustomerInquiry } from '../types';
 
 export const CustomGiftBoxBuilder: React.FC = () => {
   const { data: siteData } = useSiteData();
   const productsList = siteData?.products || [];
   const whatsappNum = siteData?.settings?.whatsappNumber || '919403358033';
+  const whatsappDisplay = siteData?.settings?.whatsappDisplay || '+91 94033 58033';
 
   const [selectedTierId, setSelectedTierId] = useState<string>('royal-6');
   const [selectedItemIds, setSelectedItemIds] = useState<string[]>([
@@ -18,6 +21,10 @@ export const CustomGiftBoxBuilder: React.FC = () => {
     'chivda',
     'karanji'
   ]);
+  const [customerName, setCustomerName] = useState<string>('');
+  const [customerPhone, setCustomerPhone] = useState<string>('');
+  const [isSubmitting, setIsSubmitting] = useState<boolean>(false);
+  const [submittedInquiry, setSubmittedInquiry] = useState<CustomerInquiry | null>(null);
 
   const currentTier = GIFT_BOX_TIERS.find((t) => t.id === selectedTierId) || GIFT_BOX_TIERS[1];
 
@@ -40,6 +47,35 @@ export const CustomGiftBoxBuilder: React.FC = () => {
   };
 
   const selectedProductNames = productsList.filter((p) => selectedItemIds.includes(p.id)).map((p) => p.name);
+
+  const handleGiftBoxInquiry = async () => {
+    setIsSubmitting(true);
+    try {
+      const name = customerName.trim() || 'Festive Gifting Customer';
+      const phone = customerPhone.trim() || whatsappNum;
+      const itemsText = selectedProductNames.length > 0 
+        ? selectedProductNames.join(', ') 
+        : 'Chef Selection of Traditional Sweets & Faral';
+
+      const result = await submitDualChannelInquiry(
+        {
+          customerName: name,
+          phone: phone,
+          product: `Custom Gift Box: ${currentTier.name}`,
+          quantity: `1 Box (${currentTier.capacity} Items)`,
+          message: `Custom Festive Gift Box (${currentTier.name}). Selected items: ${itemsText}`,
+          source: 'Custom Gift Box Builder',
+        },
+        whatsappNum
+      );
+
+      setSubmittedInquiry(result.inquiry);
+    } catch (err) {
+      console.error('Gift box inquiry error:', err);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <section id="gift-boxes" className="py-20 bg-[#F4F9F5] relative border-t border-[#D5E8DA]">
@@ -219,21 +255,83 @@ export const CustomGiftBoxBuilder: React.FC = () => {
                 </div>
               </div>
 
-              {/* Create Your Gift Box CTA Button */}
-              <a
-                id="create-gift-box-btn"
-                href={getWhatsAppUrl(WhatsAppMessages.giftBoxInquiry(selectedProductNames, currentTier.name), whatsappNum)}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="w-full inline-flex items-center justify-center gap-2.5 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-3.5 px-6 rounded-2xl font-bold text-sm shadow-xl transition-all duration-200 transform hover:scale-[1.02] border border-[#F5A800]/40"
-              >
-                <MessageCircle className="w-5 h-5 fill-white" />
-                <span>Create Your Gift Box on WhatsApp</span>
-              </a>
+              {submittedInquiry ? (
+                <div className="bg-white p-4 rounded-xl border border-[#A3D9B1] space-y-3 animate-fadeIn">
+                  <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                    <span>Inquiry Registered in Central Database!</span>
+                  </div>
+                  <div className="text-[11px] text-gray-600">
+                    Reference: <strong className="font-mono text-emerald-700">{submittedInquiry.inquiryId}</strong>
+                  </div>
+                  <div className="text-[11px] text-gray-500">
+                    Your gift box selection has been saved to the Admin Panel and initiated on WhatsApp.
+                  </div>
+                  <div className="flex gap-2 pt-1">
+                    <a
+                      href={getWhatsAppUrl(
+                        WhatsAppMessages.giftBoxInquiry(selectedProductNames, currentTier.name),
+                        whatsappNum
+                      )}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="flex-1 inline-flex items-center justify-center gap-1.5 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-2 px-3 rounded-lg font-bold text-xs"
+                    >
+                      <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                      <span>Re-open WhatsApp</span>
+                    </a>
+                    <button
+                      type="button"
+                      onClick={() => setSubmittedInquiry(null)}
+                      className="p-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs flex items-center justify-center"
+                      title="Build Another Box"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-2 gap-2 pt-1">
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#0D5B29] uppercase mb-1">Your Name</label>
+                      <input
+                        type="text"
+                        value={customerName}
+                        onChange={(e) => setCustomerName(e.target.value)}
+                        placeholder="e.g. Anjali"
+                        className="w-full text-xs p-2 rounded-lg bg-white border border-[#D5E8DA] focus:ring-1 focus:ring-[#0D5B29]"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-[#0D5B29] uppercase mb-1">WhatsApp No.</label>
+                      <input
+                        type="tel"
+                        value={customerPhone}
+                        onChange={(e) => setCustomerPhone(e.target.value)}
+                        placeholder="e.g. 9876543210"
+                        className="w-full text-xs p-2 rounded-lg bg-white border border-[#D5E8DA] focus:ring-1 focus:ring-[#0D5B29]"
+                      />
+                    </div>
+                  </div>
 
-              <div className="text-center text-[11px] text-[#557060]">
-                Opens WhatsApp with your exact selected combination pre-filled!
-              </div>
+                  {/* Create Your Gift Box CTA Button */}
+                  <button
+                    id="create-gift-box-btn"
+                    type="button"
+                    disabled={isSubmitting}
+                    onClick={handleGiftBoxInquiry}
+                    className="w-full inline-flex items-center justify-center gap-2.5 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-3.5 px-6 rounded-2xl font-bold text-sm shadow-xl transition-all duration-200 transform hover:scale-[1.02] border border-[#F5A800]/40 cursor-pointer disabled:opacity-50"
+                  >
+                    <MessageCircle className="w-5 h-5 fill-white" />
+                    <span>{isSubmitting ? 'Saving to Database & WhatsApp...' : 'Enquire & Send to WhatsApp'}</span>
+                  </button>
+
+                  <div className="text-center text-[11px] text-[#557060]">
+                    Inquiry is stored in our central CRM & opened directly on WhatsApp!
+                  </div>
+                </>
+              )}
 
             </div>
 

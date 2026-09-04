@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { MessageCircle, X, Sparkles, Gift, PackageCheck, ShoppingBag, ChevronRight } from 'lucide-react';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
+import { submitDualChannelInquiry } from '../services/inquirySubmissionService';
 
 export const FloatingWhatsApp: React.FC = () => {
   const { data: siteData } = useSiteData();
@@ -37,6 +38,25 @@ export const FloatingWhatsApp: React.FC = () => {
       message: WhatsAppMessages.bulkOrder()
     }
   ];
+
+  const handleSelectQuickInquiry = async (item: typeof quickTemplates[0]) => {
+    setIsOpen(false);
+    try {
+      await submitDualChannelInquiry(
+        {
+          customerName: 'WhatsApp Visitor',
+          phone: whatsappNum,
+          product: item.label,
+          quantity: 'As requested',
+          message: item.message,
+          source: 'Floating WhatsApp Widget',
+        },
+        whatsappNum
+      );
+    } catch {
+      window.open(getWhatsAppUrl(item.message, whatsappNum), '_blank');
+    }
+  };
 
   return (
     <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end">
@@ -76,14 +96,12 @@ export const FloatingWhatsApp: React.FC = () => {
             {quickTemplates.map((item, index) => {
               const Icon = item.icon;
               return (
-                <a
+                <button
                   key={index}
                   id={`floating-wa-opt-${index}`}
-                  href={getWhatsAppUrl(item.message, whatsappNum)}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  onClick={() => setIsOpen(false)}
-                  className="flex items-center justify-between p-2.5 rounded-2xl bg-white hover:bg-[#EBF5EE] border border-[#D5E8DA] transition-colors group"
+                  type="button"
+                  onClick={() => handleSelectQuickInquiry(item)}
+                  className="w-full flex items-center justify-between p-2.5 rounded-2xl bg-white hover:bg-[#EBF5EE] border border-[#D5E8DA] transition-colors group cursor-pointer text-left"
                 >
                   <div className="flex items-center gap-2.5">
                     <div className="w-8 h-8 rounded-xl bg-[#EBF5EE] text-[#0D5B29] flex items-center justify-center shrink-0 group-hover:bg-[#0D5B29] group-hover:text-white transition-colors">
@@ -99,7 +117,7 @@ export const FloatingWhatsApp: React.FC = () => {
                     </div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-[#A8C7B2] group-hover:text-[#0D5B29] transition-colors shrink-0" />
-                </a>
+                </button>
               );
             })}
           </div>

@@ -4,7 +4,44 @@ import fs from 'fs';
 import bcrypt from 'bcryptjs';
 import multer from 'multer';
 import { createServer as createViteServer } from 'vite';
-import { db, ProductItem, CategoryItem, GalleryItemRecord, TestimonialRecord, EnquiryRecord, MediaItem } from './src/server/db.js';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import {
+  db,
+  ProductItem,
+  CategoryItem,
+  GalleryItemRecord,
+  TestimonialRecord,
+  EnquiryRecord,
+  CustomerInquiry,
+  InquiryStatus,
+  MediaItem,
+} from './src/server/db.js';
+
+// Setup Supabase Client on Server (if credentials provided in environment or DB)
+let serverSupabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+let serverSupabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || '';
+
+const savedDbConfig = db.get('supabase_config') as { url?: string; key?: string } | undefined;
+if (!serverSupabaseUrl && savedDbConfig?.url) serverSupabaseUrl = savedDbConfig.url;
+if (!serverSupabaseKey && savedDbConfig?.key) serverSupabaseKey = savedDbConfig.key;
+
+let serverSupabase: SupabaseClient | null = (serverSupabaseUrl && serverSupabaseKey && serverSupabaseUrl.startsWith('http'))
+  ? createClient(serverSupabaseUrl, serverSupabaseKey)
+  : null;
+
+function initOrUpdateServerSupabase(url: string, key: string) {
+  if (url && key && url.startsWith('http')) {
+    try {
+      serverSupabase = createClient(url, key);
+      serverSupabaseUrl = url;
+      serverSupabaseKey = key;
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+}
 
 // Setup uploads folder in public/uploads
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
@@ -225,6 +262,34 @@ async function startServer() {
       recentEnquiries: all.enquiries.slice(0, 5),
       recentProducts: all.products.slice(0, 5),
       siteSettings: all.settings,
+    });
+  });
+
+  // ==========================================
+  // 3.5 CLIENT SUPABASE REALTIME CONFIG
+  // ==========================================
+  app.get('/api/config/supabase-public', (req, res) => {
+    const dbConfig = db.get('supabase_config') as { url?: string; key?: string } | undefined;
+    const url = process.env.VITE_SUPABASE_URL || process.env.SUPABASE_URL || dbConfig?.url || serverSupabaseUrl || '';
+    const key = process.env.VITE_SUPABASE_ANON_KEY || process.env.SUPABASE_ANON_KEY || dbConfig?.key || serverSupabaseKey || '';
+    return res.json({
+      supabaseUrl: url,
+      supabaseAnonKey: key,
+      configured: Boolean(url && key && url.startsWith('http')),
+    });
+  });
+
+  app.post('/api/config/supabase', (req, res) => {
+    const { supabaseUrl, supabaseAnonKey } = req.body;
+    if (!supabaseUrl || !supabaseAnonKey) {
+      return res.status(400).json({ error: 'Supabase URL and Key are required' });
+    }
+    db.set('supabase_config', { url: supabaseUrl, key: supabaseAnonKey });
+    const success = initOrUpdateServerSupabase(supabaseUrl, supabaseAnonKey);
+    return res.json({
+      success: true,
+      connected: success,
+      message: 'Supabase configuration saved and updated successfully.',
     });
   });
 
@@ -501,54 +566,355 @@ async function startServer() {
   });
 
   // ==========================================
-  // 14. ENQUIRIES / CONTACT SUBMISSIONS
+  // 14. CUSTOMER INQUIRY CRM & SUBMISSIONS
   // ==========================================
-  app.get('/api/enquiries', requireAuth, (req, res) => {
-    return res.json(db.get('enquiries'));
-  });
 
-  // Public submission endpoint from contact form
-  app.post('/api/enquiries', (req, res) => {
-    const { name, email, phone, inquiryType, packSize, message } = req.body;
-    if (!name) {
-      return res.status(400).json({ error: 'Name is required' });
-    }
+  // Anti-duplicate protection tracker: phone+message hash -> timestamp
+  const recentSubmissions = new Map<string, { timestamp: number; inquiryId: string }>();
 
-    const enquiries = db.get('enquiries');
-    const newEnquiry: EnquiryRecord = {
-      id: 'enq_' + Date.now() + '_' + Math.random().toString(36).substring(2, 6),
-      name: name.trim(),
-      email: email ? email.trim() : '',
-      phone: phone ? phone.trim() : '',
-      inquiryType: inquiryType || 'Festive Faral & Sweets Order',
-      packSize: packSize || '1 kg',
-      message: message ? message.trim() : '',
-      status: 'new',
-      createdAt: new Date().toISOString(),
+  // Helper to compute dynamic inquiry statistics
+  const computeInquiryStats = (inquiries: CustomerInquiry[]) => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const weekAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+
+    return {
+      total: inquiries.length,
+      newCount: inquiries.filter((i) => i.status === 'new').length,
+      pendingCount: inquiries.filter((i) => i.status === 'pending').length,
+      contactedCount: inquiries.filter((i) => i.status === 'contacted').length,
+      completedCount: inquiries.filter((i) => i.status === 'completed').length,
+      cancelledCount: inquiries.filter((i) => i.status === 'cancelled').length,
+      todayCount: inquiries.filter((i) => new Date(i.createdAt).getTime() >= todayStart).length,
+      thisWeekCount: inquiries.filter((i) => new Date(i.createdAt).getTime() >= weekAgo).length,
+      thisMonthCount: inquiries.filter((i) => new Date(i.createdAt).getTime() >= monthStart).length,
     };
-    enquiries.unshift(newEnquiry); // newest first
-    db.set('enquiries', enquiries);
-    return res.json({ success: true, enquiry: newEnquiry });
-  });
+  };
 
-  app.patch('/api/enquiries/:id', requireAuth, (req, res) => {
-    const { id } = req.params;
-    const enquiries = db.get('enquiries');
-    const index = enquiries.findIndex((e) => e.id === id);
-    if (index === -1) {
-      return res.status(404).json({ error: 'Enquiry not found' });
+  // Helper to fetch inquiries from Supabase or memory
+  const getAllInquiries = async (): Promise<CustomerInquiry[]> => {
+    if (serverSupabase) {
+      try {
+        const { data, error } = await serverSupabase
+          .from('reveg_inquiries')
+          .select('*')
+          .order('created_at', { ascending: false });
+
+        if (!error && data && data.length > 0) {
+          return data.map((row: any) => ({
+            id: row.id,
+            inquiryId: row.inquiry_id || row.id,
+            customerName: row.customer_name || 'Customer',
+            phone: row.phone || '',
+            email: row.email || '',
+            product: row.product || '',
+            quantity: row.quantity || '',
+            message: row.message || '',
+            source: row.source || 'Website',
+            status: (row.status as InquiryStatus) || 'new',
+            createdAt: row.created_at || new Date().toISOString(),
+            updatedAt: row.updated_at || row.created_at || new Date().toISOString(),
+          }));
+        }
+      } catch (e) {
+        console.warn('Supabase inquiries fetch warning, falling back to local storage:', e);
+      }
     }
-    enquiries[index] = { ...enquiries[index], ...req.body, id };
-    db.set('enquiries', enquiries);
-    return res.json({ success: true, enquiry: enquiries[index] });
+    return db.get('enquiries') as CustomerInquiry[];
+  };
+
+  // GET Inquiry CRM Statistics
+  app.get('/api/inquiries/stats', requireAuth, async (req, res) => {
+    try {
+      const inquiries = await getAllInquiries();
+      const stats = computeInquiryStats(inquiries);
+      return res.json(stats);
+    } catch (err: any) {
+      console.error('Error computing inquiry stats:', err);
+      return res.status(500).json({ error: 'Failed to compute inquiry statistics' });
+    }
   });
 
-  app.delete('/api/enquiries/:id', requireAuth, (req, res) => {
-    const { id } = req.params;
-    const enquiries = db.get('enquiries').filter((e) => e.id !== id);
-    db.set('enquiries', enquiries);
-    return res.json({ success: true, message: 'Enquiry deleted' });
-  });
+  // GET All Inquiries (with optional search, filter & pagination)
+  const handleGetInquiries = async (req: express.Request, res: express.Response) => {
+    try {
+      const inquiries = await getAllInquiries();
+      const { status, search, fromDate, toDate } = req.query as Record<string, string>;
+
+      let filtered = [...inquiries];
+
+      // Status filter
+      if (status && status !== 'all') {
+        filtered = filtered.filter((i) => i.status === status);
+      }
+
+      // Date range filter
+      if (fromDate) {
+        const fromTs = new Date(fromDate).getTime();
+        filtered = filtered.filter((i) => new Date(i.createdAt).getTime() >= fromTs);
+      }
+      if (toDate) {
+        const toTs = new Date(toDate).getTime() + 24 * 60 * 60 * 1000;
+        filtered = filtered.filter((i) => new Date(i.createdAt).getTime() <= toTs);
+      }
+
+      // Search query (customer name, phone, email, inquiryId, product, message)
+      if (search && search.trim()) {
+        const q = search.trim().toLowerCase();
+        filtered = filtered.filter(
+          (i) =>
+            i.customerName.toLowerCase().includes(q) ||
+            i.phone.toLowerCase().includes(q) ||
+            (i.email && i.email.toLowerCase().includes(q)) ||
+            i.inquiryId.toLowerCase().includes(q) ||
+            (i.product && i.product.toLowerCase().includes(q)) ||
+            i.message.toLowerCase().includes(q)
+        );
+      }
+
+      return res.json(filtered);
+    } catch (err: any) {
+      console.error('Error fetching inquiries:', err);
+      return res.status(500).json({ error: 'Failed to fetch inquiries' });
+    }
+  };
+
+  app.get('/api/inquiries', requireAuth, handleGetInquiries);
+  app.get('/api/enquiries', requireAuth, handleGetInquiries);
+
+  // POST Public Customer Inquiry Submission
+  const handlePostInquiry = async (req: express.Request, res: express.Response) => {
+    try {
+      const {
+        customerName: cName,
+        name,
+        phone,
+        email,
+        product: prod,
+        inquiryType,
+        quantity: qty,
+        packSize,
+        message,
+        source: src,
+      } = req.body;
+
+      // Robust Field Normalization & Validation
+      const customerName = (cName || name || '').trim();
+      const rawPhone = (phone || '').toString().trim();
+      const cleanPhone = rawPhone.replace(/[^0-9+]/g, '');
+      const digitsOnly = cleanPhone.replace(/[^0-9]/g, '');
+      const cleanEmail = (email || '').trim();
+      const cleanProduct = (prod || inquiryType || 'Festive Faral & Sweets Order').trim();
+      const cleanQuantity = (qty || packSize || '1 kg').trim();
+      const cleanMessage = (message || '').trim();
+      const source = (src || 'Website Contact Form').trim();
+
+      // Validation Rules
+      if (!customerName || customerName.length < 2) {
+        return res.status(400).json({ error: 'Please enter a valid customer name (at least 2 characters).' });
+      }
+
+      if (!digitsOnly || digitsOnly.length < 10) {
+        return res.status(400).json({ error: 'Please enter a valid 10-digit mobile number.' });
+      }
+
+      if (cleanEmail && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(cleanEmail)) {
+        return res.status(400).json({ error: 'Please enter a valid email address format.' });
+      }
+
+      if (!cleanMessage || cleanMessage.length < 2) {
+        return res.status(400).json({ error: 'Please enter your message or inquiry requirements.' });
+      }
+
+      // Anti-duplicate protection: prevent duplicate submissions within 30 seconds
+      const duplicateKey = `${digitsOnly}_${cleanMessage.substring(0, 40)}`;
+      const now = Date.now();
+      const existingRecord = recentSubmissions.get(duplicateKey);
+      if (existingRecord && now - existingRecord.timestamp < 30000) {
+        const localEnquiries = db.get('enquiries') as CustomerInquiry[];
+        const found = localEnquiries.find((e) => e.inquiryId === existingRecord.inquiryId);
+        if (found) {
+          return res.json({
+            success: true,
+            inquiry: found,
+            isDuplicate: true,
+            message: 'Inquiry already received. Thank you!',
+          });
+        }
+      }
+
+      // Generate or reuse Unique Human-Readable Inquiry ID
+      const randomSuffix = Math.floor(10000 + Math.random() * 90000);
+      const inquiryId = (typeof req.body.inquiryId === 'string' && req.body.inquiryId.trim())
+        ? req.body.inquiryId.trim()
+        : `INQ-${new Date().getFullYear()}-${randomSuffix}`;
+      const uniqueId = (typeof req.body.id === 'string' && req.body.id.trim())
+        ? req.body.id.trim()
+        : ('inq_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7));
+      const timestamp = new Date().toISOString();
+
+      const newInquiry: CustomerInquiry = {
+        id: uniqueId,
+        inquiryId,
+        customerName,
+        phone: cleanPhone,
+        email: cleanEmail,
+        product: cleanProduct,
+        quantity: cleanQuantity,
+        message: cleanMessage,
+        source,
+        status: 'new',
+        createdAt: timestamp,
+        updatedAt: timestamp,
+      };
+
+      // Save to local database (avoiding duplicate ID)
+      const enquiries = (db.get('enquiries') || []) as CustomerInquiry[];
+      const existingIdx = enquiries.findIndex((e) => e.id === uniqueId || e.inquiryId === inquiryId);
+      if (existingIdx >= 0) {
+        enquiries[existingIdx] = { ...enquiries[existingIdx], ...newInquiry };
+      } else {
+        enquiries.unshift(newInquiry);
+      }
+      db.set('enquiries', enquiries);
+
+      // Track duplicate protection
+      recentSubmissions.set(duplicateKey, { timestamp: now, inquiryId });
+
+      // Clean up old duplicate entries older than 2 minutes
+      for (const [key, val] of recentSubmissions.entries()) {
+        if (now - val.timestamp > 120000) {
+          recentSubmissions.delete(key);
+        }
+      }
+
+      // Persist to Supabase if configured (supports both reveg_inquiries and inquiries tables)
+      if (serverSupabase) {
+        try {
+          const rowPayload = {
+            id: newInquiry.id,
+            inquiry_id: newInquiry.inquiryId,
+            customer_name: newInquiry.customerName,
+            phone: newInquiry.phone,
+            email: newInquiry.email || '',
+            product: newInquiry.product || '',
+            quantity: newInquiry.quantity || '',
+            message: newInquiry.message,
+            source: newInquiry.source,
+            status: newInquiry.status,
+            created_at: newInquiry.createdAt,
+            updated_at: newInquiry.updatedAt,
+          };
+
+          await Promise.allSettled([
+            serverSupabase.from('reveg_inquiries').upsert(rowPayload, { onConflict: 'id' }),
+            serverSupabase.from('inquiries').upsert(rowPayload, { onConflict: 'id' }),
+          ]);
+        } catch (supaErr) {
+          console.warn('Supabase server-side insert notification:', supaErr);
+        }
+      }
+
+      return res.status(201).json({
+        success: true,
+        inquiry: newInquiry,
+        message: 'Your inquiry has been successfully registered with RevEg Fresh Foods.',
+      });
+    } catch (err: any) {
+      console.error('Error submitting inquiry:', err);
+      return res.status(500).json({ error: 'Failed to register inquiry. Please try again or WhatsApp directly.' });
+    }
+  };
+
+  app.post('/api/inquiries', handlePostInquiry);
+  app.post('/api/enquiries', handlePostInquiry);
+
+  // PATCH Update Inquiry Status
+  const handleUpdateStatus = async (req: express.Request, res: express.Response) => {
+    try {
+      const { id } = req.params;
+      const { status } = req.body;
+
+      const validStatuses: InquiryStatus[] = ['new', 'contacted', 'pending', 'completed', 'cancelled'];
+      if (!status || !validStatuses.includes(status)) {
+        return res.status(400).json({ error: 'Invalid status. Must be new, contacted, pending, completed, or cancelled.' });
+      }
+
+      const enquiries = db.get('enquiries') as CustomerInquiry[];
+      const index = enquiries.findIndex((e) => e.id === id || e.inquiryId === id);
+      if (index === -1) {
+        return res.status(404).json({ error: 'Inquiry not found' });
+      }
+
+      enquiries[index].status = status as InquiryStatus;
+      enquiries[index].updatedAt = new Date().toISOString();
+      db.set('enquiries', enquiries);
+
+      // Sync with Supabase (both tables)
+      if (serverSupabase) {
+        try {
+          const updatePayload = { status, updated_at: enquiries[index].updatedAt };
+          await Promise.allSettled([
+            serverSupabase
+              .from('reveg_inquiries')
+              .update(updatePayload)
+              .or(`id.eq.${id},inquiry_id.eq.${id}`),
+            serverSupabase
+              .from('inquiries')
+              .update(updatePayload)
+              .or(`id.eq.${id},inquiry_id.eq.${id}`),
+          ]);
+        } catch (supaErr) {
+          console.warn('Supabase status update warning:', supaErr);
+        }
+      }
+
+      return res.json({ success: true, inquiry: enquiries[index] });
+    } catch (err: any) {
+      console.error('Error updating inquiry status:', err);
+      return res.status(500).json({ error: 'Failed to update inquiry status' });
+    }
+  };
+
+  app.patch('/api/inquiries/:id/status', requireAuth, handleUpdateStatus);
+  app.patch('/api/inquiries/:id', requireAuth, handleUpdateStatus);
+  app.patch('/api/enquiries/:id', requireAuth, handleUpdateStatus);
+
+  // DELETE Inquiry
+  const handleDeleteInquiry = async (req: express.Request, res: express.Response) => {
+    try {
+      const { id } = req.params;
+      const enquiries = db.get('enquiries') as CustomerInquiry[];
+      const filtered = enquiries.filter((e) => e.id !== id && e.inquiryId !== id);
+      db.set('enquiries', filtered);
+
+      if (serverSupabase) {
+        try {
+          await Promise.allSettled([
+            serverSupabase
+              .from('reveg_inquiries')
+              .delete()
+              .or(`id.eq.${id},inquiry_id.eq.${id}`),
+            serverSupabase
+              .from('inquiries')
+              .delete()
+              .or(`id.eq.${id},inquiry_id.eq.${id}`),
+          ]);
+        } catch (supaErr) {
+          console.warn('Supabase delete warning:', supaErr);
+        }
+      }
+
+      return res.json({ success: true, message: 'Inquiry deleted successfully' });
+    } catch (err: any) {
+      console.error('Error deleting inquiry:', err);
+      return res.status(500).json({ error: 'Failed to delete inquiry' });
+    }
+  };
+
+  app.delete('/api/inquiries/:id', requireAuth, handleDeleteInquiry);
+  app.delete('/api/enquiries/:id', requireAuth, handleDeleteInquiry);
 
   // ==========================================
   // 15. NAVIGATION CONFIG

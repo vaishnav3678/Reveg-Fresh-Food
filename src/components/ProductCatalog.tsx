@@ -1,8 +1,9 @@
 import React, { useState, useMemo } from 'react';
-import { Search, Filter, MessageCircle, Sparkles, Eye, ArrowUpDown, Tag } from 'lucide-react';
+import { Search, Filter, MessageCircle, Sparkles, Eye, ArrowUpDown, Tag, Loader2, CheckCircle2 } from 'lucide-react';
 import { Product } from '../types';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
+import { submitDualChannelInquiry } from '../services/inquirySubmissionService';
 
 interface ProductCatalogProps {
   onSelectProduct: (product: Product) => void;
@@ -12,11 +13,36 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ onSelectProduct 
   const { data: siteData } = useSiteData();
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [submittingProductId, setSubmittingProductId] = useState<string | null>(null);
+  const [savedInquiryIds, setSavedInquiryIds] = useState<{ [productId: string]: string }>({});
 
   const productsList = siteData?.products || [];
   const categoriesList = siteData?.categories || [];
   const whatsappNum = siteData?.settings?.whatsappNumber || '919403358033';
   const whatsappDisplay = siteData?.settings?.whatsappDisplay || '+91 94033 58033';
+
+  const handleQuickInquire = async (product: Product, defaultPack: string) => {
+    setSubmittingProductId(product.id);
+    try {
+      const result = await submitDualChannelInquiry(
+        {
+          customerName: 'Catalog Customer',
+          phone: whatsappNum,
+          product: `${product.name} (${defaultPack})`,
+          quantity: defaultPack,
+          message: `Product inquiry for fresh batch of ${product.name} (${defaultPack}). Please share current pricing and dispatch schedule.`,
+          source: 'Product Catalog Card',
+        },
+        whatsappNum
+      );
+
+      setSavedInquiryIds((prev) => ({ ...prev, [product.id]: result.inquiry.inquiryId }));
+    } catch (err) {
+      console.error('Catalog inquiry error:', err);
+    } finally {
+      setSubmittingProductId(null);
+    }
+  };
 
   const categoryTabs = useMemo(() => {
     const tabs = [
@@ -277,17 +303,47 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ onSelectProduct 
                       </button>
                     </div>
 
-                    {/* WhatsApp Inquiry Button for this Specific Product */}
-                    <a
-                      id={`product-whatsapp-btn-${product.id}`}
-                      href={getWhatsAppUrl(WhatsAppMessages.productInquiry(product.name, defaultPack), whatsappNum)}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      className="w-full inline-flex items-center justify-center gap-2 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-2.5 px-4 rounded-xl font-bold text-xs shadow-md transition-all duration-200 transform hover:scale-[1.02] border border-[#F5A800]/40"
-                    >
-                      <MessageCircle className="w-4 h-4 fill-white" />
-                      <span>Enquire on WhatsApp</span>
-                    </a>
+                    {/* Dual-Channel WhatsApp & Database Inquiry Button */}
+                    {savedInquiryIds[product.id] ? (
+                      <div className="space-y-1.5 animate-fadeIn">
+                        <div className="flex items-center justify-between text-[11px] text-emerald-800 bg-[#EBF5EE] border border-[#A3D9B1] py-1 px-2.5 rounded-lg font-medium">
+                          <span className="flex items-center gap-1 font-bold">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" /> Saved to Admin Panel
+                          </span>
+                          <span className="font-mono font-bold text-[10px]">{savedInquiryIds[product.id]}</span>
+                        </div>
+                        <a
+                          id={`product-whatsapp-btn-${product.id}`}
+                          href={getWhatsAppUrl(WhatsAppMessages.productInquiry(product.name, defaultPack), whatsappNum)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="w-full inline-flex items-center justify-center gap-1.5 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-2 px-3 rounded-xl font-bold text-xs shadow-sm transition-all"
+                        >
+                          <MessageCircle className="w-3.5 h-3.5 fill-white" />
+                          <span>Re-open WhatsApp Chat</span>
+                        </a>
+                      </div>
+                    ) : (
+                      <button
+                        id={`product-whatsapp-btn-${product.id}`}
+                        type="button"
+                        disabled={submittingProductId === product.id}
+                        onClick={() => handleQuickInquire(product, defaultPack)}
+                        className="w-full inline-flex items-center justify-center gap-2 bg-[#E8590C] hover:bg-[#CC4B04] text-white py-2.5 px-4 rounded-xl font-bold text-xs shadow-md transition-all duration-200 transform hover:scale-[1.02] border border-[#F5A800]/40 disabled:opacity-60 cursor-pointer"
+                      >
+                        {submittingProductId === product.id ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Saving & Opening WhatsApp...</span>
+                          </>
+                        ) : (
+                          <>
+                            <MessageCircle className="w-4 h-4 fill-white" />
+                            <span>Enquire on WhatsApp</span>
+                          </>
+                        )}
+                      </button>
+                    )}
                   </div>
 
                 </div>
