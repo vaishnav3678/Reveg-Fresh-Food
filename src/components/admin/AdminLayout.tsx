@@ -84,7 +84,7 @@ export const AdminLayout: React.FC<AdminLayoutProps> = ({
     { id: 'categories', label: 'Categories', icon: Layers, group: 'Catalog' },
 
     { id: 'homepage', label: 'Sections & Order', icon: Home, group: 'Content' },
-    { id: 'hero', label: 'Hero Banner', icon: Sparkles, group: 'Content' },
+    { id: 'hero', label: 'Hero Image & Settings', icon: ImageIcon, group: 'Content' },
     { id: 'about', label: 'About Page', icon: Info, group: 'Content' },
     { id: 'gallery', label: 'Photo Gallery', icon: Camera, group: 'Content' },
     { id: 'testimonials', label: 'Customer Reviews', icon: MessageSquareQuote, group: 'Content' },

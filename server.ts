@@ -43,13 +43,22 @@ function initOrUpdateServerSupabase(url: string, key: string) {
   return false;
 }
 
-// Setup uploads folder in public/uploads
+// Setup uploads folder in public/uploads and uploads/hero
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
+const HERO_UPLOADS_DIR = path.join(UPLOADS_DIR, 'hero');
+const ROOT_HERO_UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'hero');
+
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
 }
+if (!fs.existsSync(HERO_UPLOADS_DIR)) {
+  fs.mkdirSync(HERO_UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(ROOT_HERO_UPLOADS_DIR)) {
+  fs.mkdirSync(ROOT_HERO_UPLOADS_DIR, { recursive: true });
+}
 
-// Multer storage configuration
+// Multer storage configuration for general uploads
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, UPLOADS_DIR);
@@ -74,6 +83,33 @@ const upload = multer({
   },
 });
 
+// Dedicated Hero Image Multer Storage (supporting JPG, JPEG, PNG, WEBP with 10MB max limit)
+const heroStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, HERO_UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const unique = Date.now() + '_' + Math.round(Math.random() * 1e6);
+    cb(null, `hero_${unique}${ext}`);
+  },
+});
+
+const heroUpload = multer({
+  storage: heroStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
+    const allowedMimes = ['image/jpeg', 'image/png', 'image/webp', 'image/pjpeg'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedExts.includes(ext) && (allowedMimes.includes(file.mimetype) || file.mimetype.startsWith('image/'))) {
+      cb(null, true);
+    } else {
+      cb(new Error('Invalid format. Only JPG, JPEG, PNG, and WEBP formats are supported for Hero banner.'));
+    }
+  },
+});
+
 async function startServer() {
   const app = express();
   const PORT = 3000;
@@ -82,8 +118,9 @@ async function startServer() {
   app.use(express.json({ limit: '25mb' }));
   app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
-  // Static uploads route
+  // Static uploads routes (supporting both public/uploads and root uploads)
   app.use('/uploads', express.static(UPLOADS_DIR));
+  app.use('/uploads', express.static(path.join(process.cwd(), 'uploads')));
 
   // Authentication Middleware helper
   const requireAuth = (req: express.Request, res: express.Response, next: express.NextFunction) => {
@@ -211,17 +248,49 @@ async function startServer() {
     return res.json({ success: true, user: users[userIndex] });
   });
 
+  // Dynamic Hero Configuration Helper
+  const DEFAULT_HERO_IMG = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?auto=format&fit=crop&w=1000&q=85';
+
+  const getHeroConfig = () => {
+    const heroJsonFile = path.join(process.cwd(), 'data', 'hero.json');
+    let hero = db.get('hero');
+    if (fs.existsSync(heroJsonFile)) {
+      try {
+        const fileContent = JSON.parse(fs.readFileSync(heroJsonFile, 'utf-8'));
+        if (fileContent && typeof fileContent === 'object') {
+          hero = { ...hero, ...fileContent };
+        }
+      } catch (e) {}
+    }
+    return hero;
+  };
+
+  const saveHeroConfig = (updated: any) => {
+    db.set('hero', updated);
+    const heroJsonFile = path.join(process.cwd(), 'data', 'hero.json');
+    try {
+      if (!fs.existsSync(path.dirname(heroJsonFile))) {
+        fs.mkdirSync(path.dirname(heroJsonFile), { recursive: true });
+      }
+      fs.writeFileSync(heroJsonFile, JSON.stringify(updated, null, 2), 'utf-8');
+    } catch (e) {
+      console.warn('Could not write to data/hero.json:', e);
+    }
+    return updated;
+  };
+
   // ==========================================
   // 2. PUBLIC SITE DATA ENDPOINT
   // ==========================================
-  app.get('/api/public-content', (req, res) => {
+  const handlePublicContent = (req: express.Request, res: express.Response) => {
     const dbAll = db.getAll();
+    const heroConfig = getHeroConfig();
     return res.json({
       settings: dbAll.settings,
       theme: dbAll.theme,
       seo: dbAll.seo,
       sections: dbAll.sections.filter((s) => s.enabled).sort((a, b) => a.sortOrder - b.sortOrder),
-      hero: dbAll.hero,
+      hero: { ...dbAll.hero, ...heroConfig },
       about: dbAll.about,
       products: dbAll.products.filter((p) => p.status === 'active').sort((a, b) => (a.sortOrder || 99) - (b.sortOrder || 99)),
       categories: dbAll.categories.filter((c) => c.status === 'active').sort((a, b) => a.sortOrder - b.sortOrder),
@@ -230,7 +299,10 @@ async function startServer() {
       navigation: dbAll.navigation,
       footer: dbAll.footer,
     });
-  });
+  };
+
+  app.get('/api/public-content', handlePublicContent);
+  app.get('/api/public-content.php', handlePublicContent);
 
   // ==========================================
   // 3. STATS & DASHBOARD OVERVIEW
@@ -352,18 +424,139 @@ async function startServer() {
   });
 
   // ==========================================
-  // 8. HERO BANNER CONFIG
+  // 8. HERO BANNER CONFIG & DYNAMIC IMAGE MANAGEMENT
+  // Compatible with PHP API endpoints: /api/hero and /api/hero.php
   // ==========================================
-  app.get('/api/hero', (req, res) => {
-    return res.json(db.get('hero'));
+  const handleGetHero = (req: express.Request, res: express.Response) => {
+    const hero = getHeroConfig();
+    return res.json({
+      success: true,
+      hero,
+      heroImage: hero.heroImage || (hero as any).imageUrl || DEFAULT_HERO_IMG,
+    });
+  };
+
+  const handleUpdateHero = (req: express.Request, res: express.Response) => {
+    const current = getHeroConfig();
+    const updated = {
+      ...current,
+      ...req.body,
+      updatedAt: new Date().toISOString(),
+    };
+    if (req.body.imageUrl && !req.body.heroImage) {
+      updated.heroImage = req.body.imageUrl;
+    } else if (req.body.heroImage && !req.body.imageUrl) {
+      updated.imageUrl = req.body.heroImage;
+    }
+    saveHeroConfig(updated);
+    return res.json({ success: true, hero: updated, heroImage: updated.heroImage });
+  };
+
+  const handleDeleteHeroImage = (req: express.Request, res: express.Response) => {
+    const current = getHeroConfig();
+    const oldImage = current.heroImage || (current as any).imageUrl;
+
+    // If existing image is local in uploads/hero, unlink it
+    if (oldImage && typeof oldImage === 'string' && oldImage.includes('uploads/hero/')) {
+      const filename = path.basename(oldImage);
+      const filePath = path.join(HERO_UPLOADS_DIR, filename);
+      const rootFilePath = path.join(ROOT_HERO_UPLOADS_DIR, filename);
+      if (fs.existsSync(filePath)) {
+        try { fs.unlinkSync(filePath); } catch (e) {}
+      }
+      if (fs.existsSync(rootFilePath)) {
+        try { fs.unlinkSync(rootFilePath); } catch (e) {}
+      }
+    }
+
+    const updated = {
+      ...current,
+      heroImage: DEFAULT_HERO_IMG,
+      imageUrl: DEFAULT_HERO_IMG,
+      updatedAt: new Date().toISOString(),
+    };
+    saveHeroConfig(updated);
+
+    return res.json({
+      success: true,
+      message: 'Hero image deleted and reset to default authentic showcase visual.',
+      hero: updated,
+      heroImage: DEFAULT_HERO_IMG,
+    });
+  };
+
+  const handleUploadHeroImage = (req: express.Request, res: express.Response) => {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image file uploaded. Only JPG, JPEG, PNG, and WEBP formats are supported.' });
+    }
+
+    // Relative URL (compatible with root / or Apache subfolder /site2/)
+    const relativeUrl = `uploads/hero/${req.file.filename}`;
+
+    // Mirror to root uploads/hero folder if needed
+    try {
+      const rootCopy = path.join(ROOT_HERO_UPLOADS_DIR, req.file.filename);
+      fs.copyFileSync(req.file.path, rootCopy);
+    } catch (e) {}
+
+    const current = getHeroConfig();
+    const updated = {
+      ...current,
+      heroImage: relativeUrl,
+      imageUrl: relativeUrl,
+      updatedAt: new Date().toISOString(),
+    };
+    saveHeroConfig(updated);
+
+    return res.json({
+      success: true,
+      message: 'Hero image uploaded and updated successfully.',
+      url: relativeUrl,
+      filename: req.file.filename,
+      size: req.file.size,
+      mime: req.file.mimetype,
+      hero: updated,
+    });
+  };
+
+  app.get('/api/hero', handleGetHero);
+  app.get('/api/hero.php', handleGetHero);
+
+  app.put('/api/hero', handleUpdateHero);
+  app.post('/api/hero', handleUpdateHero);
+  app.put('/api/hero.php', handleUpdateHero);
+  app.post('/api/hero.php', (req, res) => {
+    if (req.query.action === 'delete') {
+      return handleDeleteHeroImage(req, res);
+    }
+    return handleUpdateHero(req, res);
   });
 
-  app.put('/api/hero', requireAuth, (req, res) => {
-    const current = db.get('hero');
-    const updated = { ...current, ...req.body };
-    db.set('hero', updated);
-    return res.json({ success: true, hero: updated });
-  });
+  app.delete('/api/hero', handleDeleteHeroImage);
+  app.delete('/api/hero/image', handleDeleteHeroImage);
+  app.delete('/api/hero.php', handleDeleteHeroImage);
+
+  // Dedicated Hero Image Upload Endpoints (accepts 'hero_image', 'image', or 'file')
+  const heroUploadMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const single = heroUpload.fields([
+      { name: 'hero_image', maxCount: 1 },
+      { name: 'image', maxCount: 1 },
+      { name: 'file', maxCount: 1 },
+    ]);
+    single(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ success: false, error: err.message || 'File upload validation error' });
+      }
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+      if (files) {
+        req.file = files['hero_image']?.[0] || files['image']?.[0] || files['file']?.[0];
+      }
+      next();
+    });
+  };
+
+  app.post('/api/upload-hero', heroUploadMiddleware, handleUploadHeroImage);
+  app.post('/api/upload-hero.php', heroUploadMiddleware, handleUploadHeroImage);
 
   // ==========================================
   // 9. ABOUT PAGE CONFIG

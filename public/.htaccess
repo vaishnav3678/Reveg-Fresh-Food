@@ -1,25 +1,30 @@
 # ----------------------------------------------------------------------
-# RevEg Fresh Foods - Apache SPA Routing & Static Hosting Configuration
-# Specifically configured for Hostinger Apache / LiteSpeed hosting
-# Target: /public_html/site2 or /public_html/
-# Supports: https://site2.appwik.com/ and https://site2.appwik.com/admin
+# RevEg Fresh Foods - Apache SPA Routing & PHP Backend Configuration
+# Compatible with FileZilla / Apache / cPanel / Hostinger PHP hosting
+# Supports root directory (/public_html/) and subdirectories (/public_html/site2/)
 # ----------------------------------------------------------------------
 
 # Enable Rewrite Engine
 <IfModule mod_rewrite.c>
   RewriteEngine On
-  RewriteBase /
 
-  # Ensure Authorization header is passed for APIs (if any)
+  # Ensure Authorization header is passed to PHP
   RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
-  # If the requested file or directory exists, serve it directly
+  # If the requested file or directory exists, serve it directly (images, css, js, php)
   RewriteCond %{REQUEST_FILENAME} -f [OR]
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # For SPA routing (including /admin, /products, etc.), redirect all requests to index.html
+  # For SPA routing (e.g. /admin, /products, etc.), fallback to index.html
   RewriteRule ^ index.html [L]
+</IfModule>
+
+# Protect data directory from direct browser access
+<IfModule mod_authz_core.c>
+  <FilesMatch "^data/.*\.json$">
+    Require all denied
+  </FilesMatch>
 </IfModule>
 
 # Prevent directory browsing
@@ -36,6 +41,8 @@
   AddType font/woff2 .woff2
   AddType font/woff .woff
   AddType image/webp .webp
+  AddType image/jpeg .jpg .jpeg
+  AddType image/png .png
 </IfModule>
 
 # Enable GZIP / Deflate Compression
@@ -53,28 +60,9 @@
   AddOutputFilterByType DEFLATE image/svg+xml
 </IfModule>
 
-# Browser Caching Headers
-<IfModule mod_expires.c>
-  ExpiresActive On
-
-  # Never cache HTML so users always get the latest SPA version
-  ExpiresByType text/html "access plus 0 seconds"
-  ExpiresByType application/xhtml+xml "access plus 0 seconds"
-
-  # Cache static assets (Vite generates unique content-hashed filenames)
-  ExpiresByType text/css "access plus 1 year"
-  ExpiresByType application/javascript "access plus 1 year"
-  ExpiresByType image/svg+xml "access plus 1 year"
-  ExpiresByType image/webp "access plus 1 year"
-  ExpiresByType image/jpeg "access plus 1 year"
-  ExpiresByType image/png "access plus 1 year"
-  ExpiresByType font/woff2 "access plus 1 year"
-  ExpiresByType font/woff "access plus 1 year"
-</IfModule>
-
 # Custom Cache-Control Headers
 <IfModule mod_headers.c>
-  # HTML files: never cache
+  # HTML files: never cache so users always get the latest SPA version
   <FilesMatch "\.(html|htm)$">
     Header set Cache-Control "no-cache, no-store, must-revalidate"
     Header set Pragma "no-cache"
@@ -82,8 +70,13 @@
   </FilesMatch>
 
   # Assets with hashes: cache for 1 year
-  <FilesMatch "\.(js|css|webp|png|jpg|jpeg|gif|svg|woff|woff2|ttf|eot)$">
+  <FilesMatch "\.(js|css|woff|woff2|ttf|eot)$">
     Header set Cache-Control "public, max-age=31536000, immutable"
+  </FilesMatch>
+
+  # Uploaded hero images: cache with revalidation
+  <FilesMatch "\.(webp|png|jpg|jpeg)$">
+    Header set Cache-Control "public, max-age=86400, must-revalidate"
   </FilesMatch>
 
   # Security Headers

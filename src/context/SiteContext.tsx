@@ -17,6 +17,7 @@ import {
 import { INITIAL_SITE_DATA } from '../data/initialData';
 import { fetchAllDataFromSupabase } from '../services/supabaseService';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
+import { resolveApiUrl } from '../utils/mediaUrl';
 
 export interface PublicSiteData {
   settings: SiteSettings;
@@ -92,34 +93,77 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
     setError(null);
     try {
-      // 1. Primary Source of Truth: Supabase PostgreSQL
+      // Helper to fetch dynamic hero from PHP or Express backend
+      const fetchDynamicHero = async (): Promise<any> => {
+        try {
+          const res = await fetch(resolveApiUrl('api/hero.php'));
+          if (res.ok) {
+            const json = await res.json();
+            if (json?.hero) return json.hero;
+          }
+        } catch {}
+        try {
+          const res = await fetch(resolveApiUrl('api/hero'));
+          if (res.ok) {
+            const json = await res.json();
+            if (json) return json;
+          }
+        } catch {}
+        try {
+          const local = localStorage.getItem('reveg_hero_data');
+          if (local) return JSON.parse(local);
+        } catch {}
+        return null;
+      };
+
+      let baseData: PublicSiteData = INITIAL_SITE_DATA;
+
+      // 1. Primary Source of Truth: Supabase PostgreSQL (if configured)
       if (isSupabaseConfigured()) {
         setIsSupabaseActive(true);
-        const supabaseData = await fetchAllDataFromSupabase();
-        setData(supabaseData);
-        applyDomSettings(supabaseData);
-        return;
-      }
-
-      // 2. Secondary: If Express server has database API running (dev fallback)
-      try {
-        const res = await fetch('/api/public-content');
-        if (res.ok) {
-          const contentType = res.headers.get('content-type');
-          if (contentType && contentType.includes('application/json')) {
-            const json: PublicSiteData = await res.json();
-            setData(json);
-            applyDomSettings(json);
-            return;
+        baseData = await fetchAllDataFromSupabase();
+      } else {
+        // 2. Secondary: If Express / PHP server has database API running
+        try {
+          const res = await fetch(resolveApiUrl('api/public-content.php'));
+          if (res.ok) {
+            const contentType = res.headers.get('content-type');
+            if (contentType && contentType.includes('application/json')) {
+              baseData = await res.json();
+            }
+          } else {
+            const res2 = await fetch(resolveApiUrl('api/public-content'));
+            if (res2.ok) {
+              const contentType2 = res2.headers.get('content-type');
+              if (contentType2 && contentType2.includes('application/json')) {
+                baseData = await res2.json();
+              }
+            }
           }
+        } catch {
+          // Static mode fallback to initial structured data
+          baseData = INITIAL_SITE_DATA;
         }
-      } catch {
-        // Express not answering (expected in static Vite deployment on Hostinger)
       }
 
-      // 3. Fallback to initial structured data
-      setData(INITIAL_SITE_DATA);
-      applyDomSettings(INITIAL_SITE_DATA);
+      // Merge dynamic Hero configuration from backend storage
+      const dynamicHero = await fetchDynamicHero();
+      if (dynamicHero) {
+        baseData = {
+          ...baseData,
+          hero: {
+            ...baseData.hero,
+            ...dynamicHero,
+            heroImage: dynamicHero.heroImage || dynamicHero.imageUrl || baseData.hero?.heroImage,
+          },
+        };
+        try {
+          localStorage.setItem('reveg_hero_data', JSON.stringify(baseData.hero));
+        } catch {}
+      }
+
+      setData(baseData);
+      applyDomSettings(baseData);
     } catch (err: any) {
       console.error('Failed to load site data:', err);
       setError(err.message || 'Failed to fetch site data');

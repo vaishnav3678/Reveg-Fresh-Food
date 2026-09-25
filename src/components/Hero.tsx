@@ -2,6 +2,7 @@ import React from 'react';
 import { ArrowRight, MessageCircle, Sparkles, Heart, ShieldCheck, Clock, Award, Leaf } from 'lucide-react';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
+import { resolveMediaUrl, DEFAULT_HERO_IMAGE } from '../utils/mediaUrl';
 
 interface HeroProps {
   onExploreProducts: () => void;
@@ -126,9 +127,14 @@ export const Hero: React.FC<HeroProps> = ({ onExploreProducts, onOpenDiwaliBanne
               <div className="rounded-3xl overflow-hidden bg-white p-3 shadow-2xl border-4 border-[#E2EFE5] relative">
                 <div className="relative h-80 sm:h-96 rounded-2xl overflow-hidden group">
                   <img
-                    src={hero?.imageUrl || "https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?auto=format&fit=crop&w=1000&q=85"}
+                    src={resolveMediaUrl(hero?.heroImage || (hero as any)?.imageUrl)}
                     alt="Authentic Traditional Indian Sweets & Faral by RevEg Fresh Foods"
                     className="w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
+                    onError={(e: any) => {
+                      if (e.target.src !== DEFAULT_HERO_IMAGE) {
+                        e.target.src = DEFAULT_HERO_IMAGE;
+                      }
+                    }}
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-[#083E1B]/90 via-transparent to-transparent flex flex-col justify-end p-5 text-white">
                     <span className="text-[#F5A800] text-xs uppercase tracking-wider font-extrabold">Signature Collection</span>

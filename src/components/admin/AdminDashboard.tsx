@@ -18,6 +18,9 @@ import {
   Clock,
   User,
   CheckCircle2,
+  Image as ImageIcon,
+  Upload,
+  Download,
 } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { AdminTab } from './AdminLayout';
@@ -25,6 +28,7 @@ import { useSiteData } from '../../context/SiteContext';
 import { CustomerInquiry, InquiryStats } from '../../types';
 import { useInquiryRealtime } from '../../context/InquiryRealtimeContext';
 import { adminReplyToCustomer, getWhatsAppUrl } from '../../utils/whatsapp';
+import { resolveMediaUrl, DEFAULT_HERO_IMAGE } from '../../utils/mediaUrl';
 
 interface AdminDashboardProps {
   onNavigateTab: (tab: AdminTab) => void;
@@ -108,6 +112,14 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
       tab: 'testimonials' as AdminTab,
     },
     {
+      title: 'Hero Banner Image',
+      value: 'Dynamic',
+      sub: 'Live homepage showcase visual',
+      icon: ImageIcon,
+      color: 'bg-emerald-600',
+      tab: 'hero' as AdminTab,
+    },
+    {
       title: 'Theme & Styling',
       value: 'Dynamic',
       sub: 'Live brand color palettes',
@@ -149,6 +161,15 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
           </div>
 
           <div className="flex flex-wrap items-center gap-3 shrink-0">
+            <button
+              onClick={() => onNavigateTab('hero')}
+              id="dash-hero-quick-btn"
+              className="inline-flex items-center gap-2 bg-[#0D5B29] hover:bg-[#083E1B] text-white px-4 py-2.5 rounded-xl font-bold text-xs shadow-lg transition-transform hover:-translate-y-0.5 border border-[#BCE5C8]/40"
+            >
+              <ImageIcon className="w-4 h-4 text-[#F5A800]" />
+              <span>Hero Image & Settings</span>
+            </button>
+
             <button
               onClick={() => onNavigateTab('products')}
               id="dash-add-product-quick-btn"
@@ -268,6 +289,103 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
             </span>
             <span className="text-2xl font-bold text-[#11311D] block mt-0.5">{inquiryStats.todayCount}</span>
             <span className="text-[10px] text-[#557060] block">{inquiryStats.thisWeekCount} past 7 days</span>
+          </div>
+        </div>
+      </div>
+
+      {/* Hero Image Management & Settings Hub (Direct Dashboard Controller) */}
+      <div className="bg-white rounded-3xl p-6 sm:p-8 border-2 border-[#D5E8DA] shadow-sm space-y-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-[#E8F2EA] pb-4">
+          <div className="flex items-center gap-3">
+            <div className="p-2.5 rounded-2xl bg-[#EBF5EE] text-[#0D5B29]">
+              <ImageIcon className="w-6 h-6 text-[#0D5B29]" />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <h3 className="font-cinzel text-lg sm:text-xl font-bold text-[#11311D]">
+                  Hero Image Management & Hero Settings
+                </h3>
+                <span className="bg-[#EBF5EE] border border-[#BCE5C8] text-[#0D5B29] text-[10px] font-extrabold uppercase px-2.5 py-0.5 rounded-full">
+                  Dynamic Apache / PHP Storage
+                </span>
+              </div>
+              <p className="text-xs text-[#557060] mt-0.5">
+                Control the primary showcase image and banner text on the homepage. Changes persist across refreshes and update live.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2.5 self-start sm:self-auto">
+            <button
+              onClick={() => onNavigateTab('hero')}
+              id="dash-manage-hero-main-btn"
+              className="inline-flex items-center gap-2 bg-[#0D5B29] hover:bg-[#083E1B] text-white px-5 py-2.5 rounded-xl font-bold text-xs shadow-md transition-all hover:-translate-y-0.5"
+            >
+              <Upload className="w-3.5 h-3.5 text-[#F5A800]" />
+              <span>Upload / Replace Hero Image</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+          {/* Hero Thumbnail Preview */}
+          <div className="md:col-span-4 relative group">
+            <div
+              onClick={() => onNavigateTab('hero')}
+              className="rounded-2xl overflow-hidden border-2 border-[#D5E8DA] aspect-[16/10] bg-[#FAF8F2] shadow-inner relative cursor-pointer"
+            >
+              <img
+                src={resolveMediaUrl(siteData?.hero?.heroImage || (siteData?.hero as any)?.imageUrl)}
+                alt="Current Hero Visual"
+                className="w-full h-full object-cover group-hover:scale-103 transition-transform duration-300"
+                onError={(e: any) => {
+                  e.target.src = DEFAULT_HERO_IMAGE;
+                }}
+              />
+              <div className="absolute top-2 left-2 px-2.5 py-1 bg-black/70 backdrop-blur-md rounded-lg text-white text-[10px] font-bold flex items-center gap-1.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse" />
+                <span>Live Hero Image</span>
+              </div>
+              <div className="absolute inset-0 bg-black/20 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                <span className="bg-white text-[#0D5B29] px-3 py-1.5 rounded-xl text-xs font-bold shadow-lg">
+                  Change Image
+                </span>
+              </div>
+            </div>
+          </div>
+
+          {/* Details & Info */}
+          <div className="md:col-span-8 space-y-3">
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase font-bold text-[#557060] tracking-wider block">
+                Headline Preview
+              </span>
+              <h4 className="font-cinzel text-base sm:text-lg font-bold text-[#11311D]">
+                {siteData?.hero?.heading || 'Authentic Taste of Tradition, Freshness You Can Trust'}
+              </h4>
+              <p className="text-xs text-[#557060] line-clamp-2">
+                {siteData?.hero?.description || 'Handcrafted traditional Indian sweets and festive faral made with heirloom recipes.'}
+              </p>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2 text-xs">
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#FAF8F2] border border-[#D5E8DA] text-[#11311D] font-mono text-[11px]">
+                <span>Storage Folder:</span> <strong className="text-[#0D5B29]">uploads/hero/</strong>
+              </span>
+
+              <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl bg-[#FAF8F2] border border-[#D5E8DA] text-[#557060] text-[11px]">
+                Supported: JPG, JPEG, PNG, WEBP (Max 10MB)
+              </span>
+
+              <button
+                onClick={() => onNavigateTab('hero')}
+                className="inline-flex items-center gap-1.5 text-[#0D5B29] hover:text-[#E8590C] font-bold text-xs"
+              >
+                <span>Manage Full Hero Banner & Visuals</span>
+                <ArrowRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -526,11 +644,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
             <div className="p-3.5 rounded-2xl bg-[#EBF5EE] border border-[#BCE5C8] space-y-1 text-[#0D5B29]">
               <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
                 <Globe className="w-3.5 h-3.5" />
-                <span>Zero-Backend Static Store</span>
+                <span>Dynamic PHP & Apache Storage</span>
               </span>
               <p className="text-[11px]">
-                Changes saved in the Admin Panel persist in your browser and instantly update the Public Website.
+                Changes saved in the Admin Panel persist on your server and instantly update the Public Website.
               </p>
+            </div>
+
+            <div className="p-3.5 rounded-2xl bg-[#FFF6EE] border border-[#FCDDC2] space-y-2 text-[#E8590C]">
+              <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5">
+                <Download className="w-3.5 h-3.5" />
+                <span>FileZilla Production ZIP</span>
+              </span>
+              <p className="text-[11px] text-[#557060]">
+                Pre-built package with PHP APIs, dynamic hero upload, and Apache .htaccess ready for <code className="font-mono text-[#0D5B29]">/public_html/site2/</code>.
+              </p>
+              <a
+                href="./reveg-fresh-foods-filezilla.zip"
+                download="reveg-fresh-foods-filezilla.zip"
+                className="inline-flex items-center gap-2 bg-[#E8590C] hover:bg-[#CC4B04] text-white px-3.5 py-2 rounded-xl font-bold text-xs shadow-xs transition-colors w-full justify-center"
+              >
+                <Download className="w-3.5 h-3.5" />
+                <span>Download FileZilla ZIP</span>
+              </a>
             </div>
           </div>
         </div>
