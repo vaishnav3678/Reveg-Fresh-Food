@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import { resolveApiUrl } from '../utils/mediaUrl';
 
 export interface AdminProfile {
   id: string;
@@ -46,11 +47,14 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const verifySession = useCallback(async (activeToken: string) => {
     try {
       setIsLoading(true);
-      const res = await fetch('/api/auth/me', {
-        headers: {
-          Authorization: `Bearer ${activeToken}`,
-        },
+      let res = await fetch(resolveApiUrl('api/auth.php?action=me'), {
+        headers: { Authorization: `Bearer ${activeToken}` },
       });
+      if (!res.ok) {
+        res = await fetch(resolveApiUrl('api/auth/me'), {
+          headers: { Authorization: `Bearer ${activeToken}` },
+        });
+      }
       if (res.ok) {
         const data = await res.json();
         setUser(data.user);
@@ -96,13 +100,21 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
     const trimmedUsername = username.trim();
     const cleanPassword = password.trim();
 
-    // 1. Attempt API server authentication if server is running
+    // 1. Attempt PHP or Express API authentication
     try {
-      const res = await fetch('/api/auth/login', {
+      let res = await fetch(resolveApiUrl('api/auth.php?action=login'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ username: trimmedUsername, password: cleanPassword }),
       });
+
+      if (!res.ok && res.status === 404) {
+        res = await fetch(resolveApiUrl('api/auth/login'), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: trimmedUsername, password: cleanPassword }),
+        });
+      }
 
       const contentType = res.headers.get('content-type');
       if (contentType && contentType.includes('application/json')) {
@@ -114,14 +126,13 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
           setUser(data.user);
           return { success: true };
         } else if (!res.ok) {
-          // If server explicitly rejected with invalid credentials
           if (res.status === 401 || res.status === 400) {
             return { success: false, error: data.error || 'Invalid username or password' };
           }
         }
       }
     } catch {
-      // Backend not running (static environment)
+      // Backend not running (static environment fallback)
     }
 
     // 2. Default exact credentials validation (Requirement: Username: admin, Password: admin123)
@@ -143,12 +154,19 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
   const logout = async () => {
     if (token && !token.startsWith('reveg_admin_session_')) {
       try {
-        await fetch('/api/auth/logout', {
+        await fetch(resolveApiUrl('api/auth.php?action=logout'), {
           method: 'POST',
           headers: { Authorization: `Bearer ${token}` },
         });
-      } catch (e) {
-        console.error('Logout error:', e);
+      } catch {
+        try {
+          await fetch(resolveApiUrl('api/auth/logout'), {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${token}` },
+          });
+        } catch (e) {
+          console.error('Logout error:', e);
+        }
       }
     }
     localStorage.removeItem(TOKEN_KEY);
@@ -159,11 +177,12 @@ export const AdminAuthProvider: React.FC<{ children: React.ReactNode }> = ({ chi
 
   const authFetch = useCallback(
     async (url: string, options: RequestInit = {}): Promise<Response> => {
+      const resolvedUrl = resolveApiUrl(url);
       const headers = new Headers(options.headers || {});
       if (token) {
         headers.set('Authorization', `Bearer ${token}`);
       }
-      return fetch(url, { ...options, headers });
+      return fetch(resolvedUrl, { ...options, headers });
     },
     [token]
   );

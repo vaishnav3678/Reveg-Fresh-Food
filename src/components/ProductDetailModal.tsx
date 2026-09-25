@@ -4,6 +4,7 @@ import { Product, CustomerInquiry } from '../types';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
 import { submitDualChannelInquiry } from '../services/inquirySubmissionService';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -80,9 +81,12 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
           {/* Left Column: Big Product Image */}
           <div className="relative h-64 md:h-full min-h-[300px] bg-[#F0F7F2] overflow-hidden">
             <img
-              src={product.image}
+              src={resolveMediaUrl(product.image)}
               alt={product.name}
               className="w-full h-full object-cover"
+              onError={(e: any) => {
+                e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800';
+              }}
             />
             <div className="absolute inset-0 bg-gradient-to-t from-[#083E1B]/80 via-transparent to-transparent flex flex-col justify-end p-5 text-white">
               {product.tasteProfile && (
@@ -115,6 +119,45 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({ product,
               <h2 className="font-cinzel text-2xl sm:text-3xl font-extrabold text-[#11311D] mt-2">
                 {product.name}
               </h2>
+
+              {/* Price, Discount, and Stock Quantity Badge */}
+              <div className="mt-2.5 flex items-center gap-3 flex-wrap">
+                <span className="text-xl sm:text-2xl font-extrabold text-[#E8590C]">
+                  {product.price
+                    ? (String(product.price).startsWith('₹') ? product.price : `₹${product.price}`)
+                    : product.priceGuide || 'Price on Enquiry'}
+                </span>
+                {product.discountPrice && (
+                  <span className="text-sm sm:text-base line-through text-gray-400 font-medium">
+                    {String(product.discountPrice).startsWith('₹') ? product.discountPrice : `₹${product.discountPrice}`}
+                  </span>
+                )}
+                {product.quantity ? (
+                  <span className="text-[11px] font-bold bg-[#EBF5EE] text-[#0D5B29] px-2.5 py-1 rounded-full border border-[#BCE5C8]">
+                    {product.quantity}
+                  </span>
+                ) : (
+                  <span className="text-[11px] font-bold bg-[#EBF5EE] text-[#0D5B29] px-2.5 py-1 rounded-full border border-[#BCE5C8]">
+                    Fresh Batches Daily
+                  </span>
+                )}
+              </div>
+
+              {/* Texture & Taste Quick Badges */}
+              {(product.tasteProfile || product.texture) && (
+                <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                  {product.tasteProfile && (
+                    <span className="text-[#557060]">
+                      <strong className="text-[#11311D]">Taste:</strong> {product.tasteProfile}
+                    </span>
+                  )}
+                  {product.texture && (
+                    <span className="text-[#557060]">
+                      <strong className="text-[#11311D]">• Texture:</strong> {product.texture}
+                    </span>
+                  )}
+                </div>
+              )}
 
               {/* Short & Detailed Description */}
               <p className="text-sm text-[#4A6354] mt-3 leading-relaxed">

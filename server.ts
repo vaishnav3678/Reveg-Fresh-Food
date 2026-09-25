@@ -47,6 +47,8 @@ function initOrUpdateServerSupabase(url: string, key: string) {
 const UPLOADS_DIR = path.join(process.cwd(), 'public', 'uploads');
 const HERO_UPLOADS_DIR = path.join(UPLOADS_DIR, 'hero');
 const ROOT_HERO_UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'hero');
+const PRODUCTS_UPLOADS_DIR = path.join(UPLOADS_DIR, 'products');
+const ROOT_PRODUCTS_UPLOADS_DIR = path.join(process.cwd(), 'uploads', 'products');
 
 if (!fs.existsSync(UPLOADS_DIR)) {
   fs.mkdirSync(UPLOADS_DIR, { recursive: true });
@@ -56,6 +58,12 @@ if (!fs.existsSync(HERO_UPLOADS_DIR)) {
 }
 if (!fs.existsSync(ROOT_HERO_UPLOADS_DIR)) {
   fs.mkdirSync(ROOT_HERO_UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(PRODUCTS_UPLOADS_DIR)) {
+  fs.mkdirSync(PRODUCTS_UPLOADS_DIR, { recursive: true });
+}
+if (!fs.existsSync(ROOT_PRODUCTS_UPLOADS_DIR)) {
+  fs.mkdirSync(ROOT_PRODUCTS_UPLOADS_DIR, { recursive: true });
 }
 
 // Multer storage configuration for general uploads
@@ -106,6 +114,32 @@ const heroUpload = multer({
       cb(null, true);
     } else {
       cb(new Error('Invalid format. Only JPG, JPEG, PNG, and WEBP formats are supported for Hero banner.'));
+    }
+  },
+});
+
+// Dedicated Product Image Multer Storage
+const productStorage = multer.diskStorage({
+  destination: (req, file, cb) => {
+    cb(null, PRODUCTS_UPLOADS_DIR);
+  },
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname).toLowerCase();
+    const unique = Date.now() + '_' + Math.round(Math.random() * 1e6);
+    cb(null, `prod_${unique}${ext}`);
+  },
+});
+
+const productUpload = multer({
+  storage: productStorage,
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB
+  fileFilter: (req, file, cb) => {
+    const allowedExts = ['.jpg', '.jpeg', '.png', '.webp'];
+    const ext = path.extname(file.originalname).toLowerCase();
+    if (allowedExts.includes(ext) || file.mimetype.startsWith('image/')) {
+      cb(null, true);
+    } else {
+      cb(new Error('Only JPG, JPEG, PNG, and WEBP formats are supported for product images.'));
     }
   },
 });
@@ -595,6 +629,9 @@ async function startServer() {
       tasteProfile: req.body.tasteProfile || '',
       ingredientsHighlight: req.body.ingredientsHighlight || [],
       texture: req.body.texture || '',
+      price: req.body.price || '',
+      discountPrice: req.body.discountPrice || '',
+      quantity: req.body.quantity || 'In Stock (Fresh Batches Daily)',
       priceGuide: req.body.priceGuide || '',
       status: req.body.status || 'active',
       sortOrder: products.length + 1,
@@ -621,6 +658,96 @@ async function startServer() {
     const products = db.get('products').filter((p) => p.id !== id);
     db.set('products', products);
     return res.json({ success: true, message: 'Product deleted' });
+  });
+
+  // Dedicated Product Upload Endpoints (accepts 'image', 'product_image', or 'file')
+  const handleProductUpload = (req: express.Request, res: express.Response) => {
+    if (!req.file) {
+      return res.status(400).json({ success: false, error: 'No image file uploaded' });
+    }
+    const relativeUrl = `uploads/products/${req.file.filename}`;
+    try {
+      const rootCopy = path.join(ROOT_PRODUCTS_UPLOADS_DIR, req.file.filename);
+      fs.copyFileSync(req.file.path, rootCopy);
+    } catch {}
+    return res.json({
+      success: true,
+      message: 'Product image uploaded successfully',
+      url: relativeUrl,
+      filename: req.file.filename,
+      size: req.file.size,
+    });
+  };
+
+  const productUploadMiddleware = (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    const single = productUpload.fields([
+      { name: 'image', maxCount: 1 },
+      { name: 'product_image', maxCount: 1 },
+      { name: 'file', maxCount: 1 },
+    ]);
+    single(req, res, (err) => {
+      if (err) {
+        return res.status(400).json({ success: false, error: err.message || 'File upload error' });
+      }
+      const files = req.files as { [fieldname: string]: Express.Multer.File[] } | undefined;
+      if (files) {
+        req.file = files['image']?.[0] || files['product_image']?.[0] || files['file']?.[0];
+      }
+      next();
+    });
+  };
+
+  app.post('/api/upload-product', productUploadMiddleware, handleProductUpload);
+  app.post('/api/upload-product.php', productUploadMiddleware, handleProductUpload);
+
+  // PHP products endpoint compatibility routes
+  app.get('/api/products.php', (req, res) => {
+    return res.json(db.get('products'));
+  });
+
+  app.put('/api/products.php', requireAuth, (req, res) => {
+    const id = req.query.id as string || req.body.id;
+    if (!id) return res.status(400).json({ error: 'Product ID required' });
+    const products = db.get('products');
+    const index = products.findIndex((p) => p.id === id);
+    if (index === -1) return res.status(404).json({ error: 'Product not found' });
+    products[index] = { ...products[index], ...req.body, id };
+    db.set('products', products);
+    return res.json({ success: true, product: products[index] });
+  });
+
+  app.post('/api/products.php', requireAuth, (req, res) => {
+    if (req.query.action === 'delete') {
+      const id = req.query.id as string || req.body.id;
+      const products = db.get('products').filter((p) => p.id !== id);
+      db.set('products', products);
+      return res.json({ success: true, message: 'Product deleted' });
+    }
+    const products = db.get('products');
+    const newProduct: ProductItem = {
+      id: req.body.id || ('prod_' + Date.now() + '_' + Math.random().toString(36).substring(2, 7)),
+      name: req.body.name || 'New Product',
+      category: req.body.category || 'sweets',
+      secondaryCategories: req.body.secondaryCategories || [],
+      description: req.body.description || '',
+      detailedDescription: req.body.detailedDescription || '',
+      image: req.body.image || 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800&auto=format&fit=crop&q=80',
+      isPopular: !!req.body.isPopular,
+      isFestiveSpecial: !!req.body.isFestiveSpecial,
+      packSizes: req.body.packSizes && req.body.packSizes.length ? req.body.packSizes : ['250g', '500g', '1 kg'],
+      tasteProfile: req.body.tasteProfile || '',
+      ingredientsHighlight: req.body.ingredientsHighlight || [],
+      texture: req.body.texture || '',
+      price: req.body.price || '',
+      discountPrice: req.body.discountPrice || '',
+      quantity: req.body.quantity || 'In Stock (Fresh Batches Daily)',
+      priceGuide: req.body.priceGuide || '',
+      status: req.body.status || 'active',
+      sortOrder: products.length + 1,
+    };
+    products.push(newProduct);
+    db.set('products', products);
+    return res.json({ success: true, product: newProduct });
   });
 
   // ==========================================

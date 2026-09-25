@@ -1,4 +1,6 @@
 import React from 'react';
+import { useSiteData } from '../context/SiteContext';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 interface BrandLogoProps {
   className?: string;
@@ -11,6 +13,10 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
   size = 'md',
   showText = false
 }) => {
+  const { data: siteData } = useSiteData();
+  const logoSrc = resolveMediaUrl(siteData?.settings?.logoUrl || 'reveg-logo.svg');
+  const brandName = siteData?.settings?.brandName || siteData?.settings?.siteName || 'RevEg Fresh Foods';
+
   const sizeMap = {
     sm: 'w-9 h-9',
     md: 'w-12 h-12',
@@ -23,12 +29,15 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
 
   return (
     <div className={`flex items-center gap-2.5 ${className}`}>
-      {/* Official RevEg Fresh Foods Circular Logo Emblem */}
+      {/* Official RevEg Fresh Foods Logo Emblem */}
       <img
-        src="/reveg-logo.svg"
-        alt="RevEg Fresh Foods Logo"
+        src={logoSrc}
+        alt={`${brandName} Logo`}
         className={`${selectedSize} object-contain shrink-0 transition-transform duration-200 hover:scale-105`}
         loading="eager"
+        onError={(e: any) => {
+          e.target.src = resolveMediaUrl('reveg-logo.svg');
+        }}
       />
 
       {showText && (
@@ -38,7 +47,7 @@ export const BrandLogo: React.FC<BrandLogoProps> = ({
             <span className="text-[#E8590C]">eg</span>
           </div>
           <span className="text-[10px] sm:text-[11px] font-extrabold uppercase tracking-[0.2em] text-[#0D5B29] mt-0.5">
-            Fresh Foods
+            {brandName.includes('Fresh Foods') ? 'Fresh Foods' : brandName}
           </span>
         </div>
       )}

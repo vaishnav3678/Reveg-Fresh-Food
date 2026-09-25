@@ -120,7 +120,10 @@ export interface ProductItem {
   tasteProfile?: string;
   ingredientsHighlight?: string[];
   texture?: string;
+  price?: string | number;
+  discountPrice?: string | number;
   priceGuide?: string;
+  quantity?: string;
   status: 'active' | 'inactive';
   sortOrder?: number;
 }

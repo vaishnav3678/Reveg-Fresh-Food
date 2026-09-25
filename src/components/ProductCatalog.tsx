@@ -4,6 +4,7 @@ import { Product } from '../types';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
 import { submitDualChannelInquiry } from '../services/inquirySubmissionService';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 interface ProductCatalogProps {
   onSelectProduct: (product: Product) => void;
@@ -69,6 +70,9 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ onSelectProduct 
 
   const filteredProducts = useMemo(() => {
     return productsList.filter((product) => {
+      // Hide inactive products from public customer view
+      if (product.status === 'inactive') return false;
+
       // Category filter
       if (activeCategory !== 'all') {
         const matchesCat =
@@ -208,10 +212,13 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ onSelectProduct 
                       className="relative h-52 sm:h-56 overflow-hidden cursor-pointer bg-[#F0F7F2]"
                     >
                       <img
-                        src={product.image}
+                        src={resolveMediaUrl(product.image)}
                         alt={product.name}
                         className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                         loading="lazy"
+                        onError={(e: any) => {
+                          e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800';
+                        }}
                       />
 
                       {/* Top Badges */}
@@ -282,6 +289,14 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ onSelectProduct 
                         ))}
                       </div>
 
+                      {/* Stock / Batch Quantity Tag */}
+                      {(product as any).quantity && (
+                        <div className="mt-2 flex items-center gap-1.5 text-[10px] text-[#0D5B29] font-semibold bg-[#EBF5EE] px-2 py-0.5 rounded-md border border-[#BCE5C8] w-fit">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                          <span>{(product as any).quantity}</span>
+                        </div>
+                      )}
+
                     </div>
                   </div>
 
@@ -290,9 +305,18 @@ export const ProductCatalog: React.FC<ProductCatalogProps> = ({ onSelectProduct 
                     <div className="flex items-center justify-between">
                       <div>
                         <span className="block text-[10px] uppercase font-bold text-[#6E8A79]">Price</span>
-                        <span className="text-xs font-bold text-[#E8590C]">
-                          {product.price ? `₹${product.price}` : 'Price on Enquiry'}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="text-xs font-bold text-[#E8590C]">
+                            {product.price
+                              ? (String(product.price).startsWith('₹') ? product.price : `₹${product.price}`)
+                              : product.priceGuide || 'Price on Enquiry'}
+                          </span>
+                          {product.discountPrice && (
+                            <span className="text-[10px] line-through text-gray-400 font-medium">
+                              {String(product.discountPrice).startsWith('₹') ? product.discountPrice : `₹${product.discountPrice}`}
+                            </span>
+                          )}
+                        </div>
                       </div>
 
                       <button

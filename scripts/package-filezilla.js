@@ -23,7 +23,7 @@ execSync('npm run build', { cwd: rootDir, stdio: 'inherit' });
 
 console.log('==> Step 2: Preparing Apache PHP runtime directories in dist/ ...');
 
-// 1. Ensure dist/api exists and copy PHP scripts
+// 1. Ensure dist/api exists and copy all PHP scripts
 const distApiDir = path.join(distDir, 'api');
 const publicApiDir = path.join(rootDir, 'public', 'api');
 if (!fs.existsSync(distApiDir)) {
@@ -40,23 +40,53 @@ if (fs.existsSync(publicApiDir)) {
   }
 }
 
-// 2. Ensure dist/uploads/hero exists and copy security .htaccess
-const distUploadsHeroDir = path.join(distDir, 'uploads', 'hero');
-if (!fs.existsSync(distUploadsHeroDir)) {
-  fs.mkdirSync(distUploadsHeroDir, { recursive: true });
-}
-const htaccessUploads = path.join(rootDir, 'public', 'uploads', 'hero', '.htaccess');
-if (fs.existsSync(htaccessUploads)) {
-  fs.copyFileSync(htaccessUploads, path.join(distUploadsHeroDir, '.htaccess'));
-  console.log('    Copied uploads/hero/.htaccess security shield');
+// 2. Ensure dist/uploads and subfolders (hero, products) exist and copy existing images
+const distUploadsDir = path.join(distDir, 'uploads');
+const distUploadsHeroDir = path.join(distUploadsDir, 'hero');
+const distUploadsProductsDir = path.join(distUploadsDir, 'products');
+
+for (const dir of [distUploadsDir, distUploadsHeroDir, distUploadsProductsDir]) {
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
 }
 
-// 3. Ensure dist/data exists and copy hero.json & db.json
+// Copy hero upload files
+const heroDirs = [path.join(rootDir, 'public', 'uploads', 'hero'), path.join(rootDir, 'uploads', 'hero')];
+for (const hDir of heroDirs) {
+  if (fs.existsSync(hDir)) {
+    for (const file of fs.readdirSync(hDir)) {
+      const src = path.join(hDir, file);
+      const dest = path.join(distUploadsHeroDir, file);
+      if (fs.statSync(src).isFile() && !fs.existsSync(dest)) {
+        fs.copyFileSync(src, dest);
+        console.log(`    Copied hero upload: uploads/hero/${file}`);
+      }
+    }
+  }
+}
+
+// Copy products upload files
+const prodDirs = [path.join(rootDir, 'public', 'uploads', 'products'), path.join(rootDir, 'uploads', 'products')];
+for (const pDir of prodDirs) {
+  if (fs.existsSync(pDir)) {
+    for (const file of fs.readdirSync(pDir)) {
+      const src = path.join(pDir, file);
+      const dest = path.join(distUploadsProductsDir, file);
+      if (fs.statSync(src).isFile() && !fs.existsSync(dest)) {
+        fs.copyFileSync(src, dest);
+        console.log(`    Copied product upload: uploads/products/${file}`);
+      }
+    }
+  }
+}
+
+// 3. Ensure dist/data exists and copy hero.json, db.json, inquiries.json
 const distDataDir = path.join(distDir, 'data');
 if (!fs.existsSync(distDataDir)) {
   fs.mkdirSync(distDataDir, { recursive: true });
 }
-const dataFiles = ['hero.json', 'db.json'];
+const dataFiles = ['hero.json', 'db.json', 'inquiries.json'];
 for (const file of dataFiles) {
   const srcPath = path.join(rootDir, 'data', file);
   if (fs.existsSync(srcPath)) {
@@ -90,13 +120,13 @@ Option A: Root Domain (e.g., https://example.com/)
 3. Extract and upload all files from this ZIP directly into /public_html/
    - index.html
    - assets/
-   - api/ (upload-hero.php, hero.php, public-content.php, inquiries.php)
-   - uploads/hero/ (.htaccess)
-   - data/ (hero.json, db.json)
+   - api/ (all PHP API endpoints: products, hero, inquiries, etc.)
+   - uploads/ (hero/ and products/ image folders)
+   - data/ (db.json, hero.json, inquiries.json)
    - .htaccess
    - reveg-logo.svg
 4. Ensure folder permissions:
-   - /uploads/ and /uploads/hero/ should be chmod 755 (or 775)
+   - /uploads/ and /uploads/products/, /uploads/hero/ should be chmod 755 (or 775)
    - /data/ should be chmod 755 (or 775)
 5. Visit your domain in the browser. The website and Admin Dashboard are live!
 
@@ -107,15 +137,25 @@ Option B: Subfolder / Subdirectory (e.g., /public_html/site2/)
    at: https://yourdomain.com/site2/ and https://yourdomain.com/site2/admin!
 
 ------------------------------------------------------------------------
-HERO IMAGE MANAGEMENT
+DYNAMIC PRODUCT IMAGE & CATALOGUE MANAGEMENT
 ------------------------------------------------------------------------
 - Navigate to /admin (e.g., https://yourdomain.com/admin or https://yourdomain.com/site2/admin)
-- Log in to the Admin Dashboard (default: admin / admin123 or your configured password)
-- Open "Hero Image Management & Hero Settings"
-- Click "Upload New Hero Image" or drag & drop (JPG, JPEG, PNG, WEBP)
-- Preview the image before saving
-- Click "Upload & Save as Hero Image"
-- The image is saved dynamically in /uploads/hero/ and appears instantly on the live website!
+- Log in to the Admin Dashboard (default: admin / admin123)
+- Click "Products Catalogue" in the sidebar navigation
+- Click "Edit" on any product (Besan Ladoo, Motichoor Ladoo, Chakli, Shankarpali, etc.)
+- Use "Upload from Device" or "Replace Image" to select a new product image (JPG, PNG, WEBP)
+- Or click "Delete / Reset Image" to remove the current image
+- Preview the image immediately in real-time
+- Click "Save Changes" / "Add Product"
+- The new image is stored dynamically in uploads/products/ and saved in data/db.json
+- The new image automatically updates everywhere that product is displayed across the customer website!
+
+------------------------------------------------------------------------
+DYNAMIC HERO IMAGE MANAGEMENT
+------------------------------------------------------------------------
+- In Admin Dashboard, open "Hero Image & Settings"
+- Click "Upload Image" or replace existing hero image
+- The image automatically updates on the live frontend Hero banner without editing any code!
 ========================================================================
 `;
 fs.writeFileSync(path.join(distDir, 'FILEZILLA_README.txt'), instructions, 'utf-8');

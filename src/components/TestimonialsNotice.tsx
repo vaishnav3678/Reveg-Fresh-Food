@@ -2,13 +2,14 @@ import React from 'react';
 import { MessageSquareHeart, Star, Sparkles, MessageCircle, Quote } from 'lucide-react';
 import { getWhatsAppUrl } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 export const TestimonialsNotice: React.FC = () => {
   const { data: siteData } = useSiteData();
   const whatsappNum = siteData?.settings?.whatsappNumber || '919403358033';
   const whatsappDisplay = siteData?.settings?.whatsappDisplay || '+91 94033 58033';
 
-  const activeTestimonials = (siteData?.testimonials || []).filter((t) => t.status === 'active');
+  const activeTestimonials = (siteData?.testimonials || []).filter((t) => t.isApproved !== false && (t as any).status !== 'inactive');
 
   return (
     <section className="py-16 bg-[#FAF8F2] border-t border-[#D5E8DA]">
@@ -51,11 +52,25 @@ export const TestimonialsNotice: React.FC = () => {
                   </div>
 
                   <div className="pt-3 border-t border-[#E8F2EA] flex items-center justify-between">
-                    <div>
-                      <h4 className="font-bold text-sm text-[#11311D]">{t.name}</h4>
-                      {t.location && (
-                        <span className="text-xs text-[#6E8A79]">{t.location}</span>
+                    <div className="flex items-center gap-3">
+                      {t.avatar && (
+                        <img
+                          src={resolveMediaUrl(t.avatar)}
+                          alt={t.name}
+                          className="w-9 h-9 rounded-full object-cover border border-[#D5E8DA] shrink-0"
+                          onError={(e: any) => {
+                            e.target.src = 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=100';
+                          }}
+                        />
                       )}
+                      <div>
+                        <h4 className="font-bold text-sm text-[#11311D]">{t.name}</h4>
+                        {(t.location || t.designation) && (
+                          <span className="text-xs text-[#6E8A79] block">
+                            {t.location || t.designation}
+                          </span>
+                        )}
+                      </div>
                     </div>
                     {t.productName && (
                       <span className="text-[10px] font-bold text-[#0D5B29] bg-[#EBF5EE] px-2.5 py-1 rounded-full border border-[#BCE5C8]">

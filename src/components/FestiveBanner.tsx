@@ -4,6 +4,7 @@ import { FESTIVAL_SPECIALS } from '../data/foodData';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { Product } from '../types';
 import { useSiteData } from '../context/SiteContext';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 interface FestiveBannerProps {
   onSelectProduct: (product: Product) => void;
@@ -40,15 +41,15 @@ export const FestiveBanner: React.FC<FestiveBannerProps> = ({ onSelectProduct })
             <div className="lg:col-span-7 space-y-6 text-center lg:text-left">
               <div className="inline-flex items-center gap-2 bg-[#E8590C]/25 border border-[#F5A800]/50 text-[#F5A800] px-4 py-1.5 rounded-full text-xs sm:text-sm font-bold tracking-wide">
                 <Sparkles className="w-4 h-4 text-[#F5A800]" />
-                <span>Diwali Faral & Festive Booking Season</span>
+                <span>{(siteData?.settings as any)?.festiveBadge || 'Diwali Faral & Festive Booking Season'}</span>
               </div>
 
               <h2 className="font-cinzel text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#FFFDF8] tracking-tight leading-tight">
-                Make This Diwali Extra Sweet ✨
+                {(siteData?.settings as any)?.festiveHeadline || 'Make This Diwali Extra Sweet ✨'}
               </h2>
 
               <p className="text-sm sm:text-base md:text-lg text-[#E3EDE6] leading-relaxed max-w-xl mx-auto lg:mx-0">
-                Traditional Ladoos • Crispy Chakli • Delicious Shankarpali • Festive Chivda • Special Gift Boxes
+                {(siteData?.settings as any)?.festiveSubtitle || 'Traditional Ladoos • Crispy Chakli • Delicious Shankarpali • Festive Chivda • Special Gift Boxes'}
               </p>
 
               <div className="pt-2 flex flex-col sm:flex-row items-center justify-center lg:justify-start gap-4">
@@ -64,7 +65,7 @@ export const FestiveBanner: React.FC<FestiveBannerProps> = ({ onSelectProduct })
                 </a>
 
                 <div className="text-xs text-[#D1E3D6] text-center sm:text-left">
-                  <span>✨ Handcrafted Fresh Batches by RevEg Fresh Foods</span> <br />
+                  <span>✨ Handcrafted Fresh Batches by {siteData?.settings?.brandName || siteData?.settings?.siteName || 'RevEg Fresh Foods'}</span> <br />
                   <span className="text-[#F5A800]">WhatsApp Booking: {whatsappDisplay}</span>
                 </div>
               </div>
@@ -74,9 +75,12 @@ export const FestiveBanner: React.FC<FestiveBannerProps> = ({ onSelectProduct })
             <div className="lg:col-span-5">
               <div className="relative rounded-2xl overflow-hidden border-2 border-[#F5A800]/60 shadow-2xl group">
                 <img
-                  src="https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=800&q=85"
+                  src={resolveMediaUrl((siteData?.settings as any)?.bannerImage || 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=800&q=85')}
                   alt="Diwali Special Faral and Sweets Hamper"
                   className="w-full h-72 sm:h-80 object-cover object-center group-hover:scale-105 transition-transform duration-500"
+                  onError={(e: any) => {
+                    e.target.src = 'https://images.unsplash.com/photo-1513151233558-d860c5398176?auto=format&fit=crop&w=800&q=85';
+                  }}
                 />
                 <div className="absolute inset-0 bg-gradient-to-t from-[#083E1B] via-transparent to-transparent flex items-end p-4">
                   <div className="bg-[#083E1B]/90 backdrop-blur-md p-3 rounded-xl border border-[#F5A800]/40 w-full text-center">
@@ -183,9 +187,12 @@ export const FestiveBanner: React.FC<FestiveBannerProps> = ({ onSelectProduct })
                 >
                   <div className="relative h-36 rounded-xl overflow-hidden mb-3">
                     <img
-                      src={product.image}
+                      src={resolveMediaUrl(product.image)}
                       alt={product.name}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                      onError={(e: any) => {
+                        e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800';
+                      }}
                     />
                     <div className="absolute top-2 right-2 bg-[#0D5B29]/90 text-white text-[10px] font-bold px-2 py-0.5 rounded-full">
                       Festive Special

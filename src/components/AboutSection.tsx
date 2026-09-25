@@ -2,6 +2,7 @@ import React from 'react';
 import { Heart, Sparkles, ChefHat, Package, CheckCircle2, MessageCircle } from 'lucide-react';
 import { getWhatsAppUrl, WhatsAppMessages } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 export const AboutSection: React.FC = () => {
   const { data: siteData } = useSiteData();
@@ -24,8 +25,8 @@ export const AboutSection: React.FC = () => {
             <span>{about?.badge || 'About RevEg Fresh Foods'}</span>
           </div>
           <h2 className="font-cinzel text-3xl sm:text-4xl md:text-5xl font-extrabold text-[#11311D] tracking-tight leading-tight">
-            {about?.title || 'Freshness You Can Taste,'} <br className="hidden sm:block" />
-            <span className="text-[#E8590C]">{about?.subtitle || 'Tradition You Can Trust'}</span>
+            {about?.heading || (about as any)?.title || 'Freshness You Can Taste,'} <br className="hidden sm:block" />
+            <span className="text-[#E8590C]">{(about as any)?.subtitle || 'Tradition You Can Trust'}</span>
           </h2>
           <div className="w-24 h-1 bg-gradient-to-r from-[#0D5B29] via-[#F5A800] to-[#E8590C] mx-auto mt-4 rounded-full" />
         </div>
@@ -39,18 +40,24 @@ export const AboutSection: React.FC = () => {
               {/* Main Image */}
               <div className="rounded-3xl overflow-hidden shadow-2xl border-4 border-white">
                 <img
-                  src={about?.mainImage || "https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=800&q=80"}
+                  src={resolveMediaUrl(about?.mainImage || "https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=800&q=80")}
                   alt="Authentic Traditional Indian Sweets Preparation by RevEg Fresh Foods"
                   className="w-full h-80 sm:h-96 object-cover"
+                  onError={(e: any) => {
+                    e.target.src = 'https://images.unsplash.com/photo-1601050690597-df0568f70950?auto=format&fit=crop&w=800&q=80';
+                  }}
                 />
               </div>
 
               {/* Overlapping Secondary Image */}
               <div className="absolute -bottom-8 -right-4 sm:-right-8 w-44 sm:w-52 h-44 sm:h-52 rounded-2xl overflow-hidden shadow-2xl border-4 border-white hidden xs:block">
                 <img
-                  src={about?.secondaryImage || "https://images.unsplash.com/photo-1606491956689-2ea866880c84?auto=format&fit=crop&w=600&q=80"}
+                  src={resolveMediaUrl(about?.subImage || (about as any)?.secondaryImage || "https://images.unsplash.com/photo-1606491956689-2ea866880c84?auto=format&fit=crop&w=600&q=80")}
                   alt="Crispy Traditional Chakli & Namkeen"
                   className="w-full h-full object-cover"
+                  onError={(e: any) => {
+                    e.target.src = 'https://images.unsplash.com/photo-1606491956689-2ea866880c84?auto=format&fit=crop&w=600&q=80';
+                  }}
                 />
               </div>
 
@@ -70,13 +77,13 @@ export const AboutSection: React.FC = () => {
             
             <div className="prose prose-lg text-[#3A5243] space-y-4">
               <p className="text-lg sm:text-xl font-medium text-[#1B3524] leading-relaxed">
-                {about?.leadParagraph || 'At RevEg Fresh Foods, we bring the authentic taste of traditional Indian sweets and snacks to your table.'}
+                {about?.description || (about as any)?.leadParagraph || 'At RevEg Fresh Foods, we bring the authentic taste of traditional Indian sweets and snacks to your table.'}
               </p>
               <p className="text-base sm:text-lg leading-relaxed text-[#4A6354]">
-                {about?.bodyParagraph1 || 'From festive favourites to everyday namkeen, our products are prepared with carefully selected ingredients and a focus on freshness, quality and delicious taste.'}
+                {about?.storyP1 || (about as any)?.bodyParagraph1 || 'From festive favourites to everyday namkeen, our products are prepared with carefully selected ingredients and a focus on freshness, quality and delicious taste.'}
               </p>
               <p className="text-base sm:text-lg leading-relaxed text-[#4A6354]">
-                {about?.bodyParagraph2 || "Whether you're celebrating a festival, looking for something special for your family or sending a box of traditional treats to loved ones, RevEg Fresh Foods is here to make every occasion more delicious."}
+                {about?.storyP2 || (about as any)?.bodyParagraph2 || "Whether you're celebrating a festival, looking for something special for your family or sending a box of traditional treats to loved ones, RevEg Fresh Foods is here to make every occasion more delicious."}
               </p>
             </div>
 

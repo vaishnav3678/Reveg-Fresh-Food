@@ -36,16 +36,16 @@ export const Hero: React.FC<HeroProps> = ({ onExploreProducts, onOpenDiwaliBanne
 
             {/* Main Headline */}
             <h1 className="font-cinzel text-3xl sm:text-4xl md:text-5xl lg:text-6xl font-extrabold text-[#11311D] tracking-tight leading-[1.15]">
-              {hero?.headline || 'Taste the Tradition,'} <br className="hidden sm:block" />
+              {hero?.heading || (hero as any)?.headline || 'Authentic Taste of Tradition,'} <br className="hidden sm:block" />
               <span className="bg-gradient-to-r from-[#0D5B29] via-[#E8590C] to-[#F5A800] bg-clip-text text-transparent">
-                {hero?.headlineHighlight || 'Freshly Made for You'}
+                {hero?.highlightWord || (hero as any)?.headlineHighlight || 'Freshness You Can Trust'}
               </span>
             </h1>
 
             {/* Subheading */}
             <p className="text-[#3A5243] text-base sm:text-lg md:text-xl font-normal leading-relaxed max-w-2xl mx-auto lg:mx-0">
-              {hero?.subheading ||
-                'Delicious traditional Indian sweets, festive faral, and crispy namkeen crafted by RevEg Fresh Foods with wholesome ingredients, pure ghee, and authentic homemade taste.'}
+              {hero?.description || (hero as any)?.subheading ||
+                'Handcrafted traditional Indian sweets, festive faral delicacies, and savory namkeen made with heirloom recipes, pure ingredients, and zero compromise on hygiene.'}
             </p>
 
             {/* Action Buttons */}

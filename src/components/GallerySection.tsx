@@ -3,6 +3,7 @@ import { Camera, Sparkles, X, ChevronLeft, ChevronRight, Eye, MessageCircle } fr
 import { GalleryItem } from '../types';
 import { getWhatsAppUrl } from '../utils/whatsapp';
 import { useSiteData } from '../context/SiteContext';
+import { resolveMediaUrl } from '../utils/mediaUrl';
 
 export const GallerySection: React.FC = () => {
   const { data: siteData } = useSiteData();
@@ -66,10 +67,13 @@ export const GallerySection: React.FC = () => {
               className="group relative rounded-3xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 transform hover:-translate-y-1 cursor-pointer bg-white border border-[#D5E8DA] aspect-square"
             >
               <img
-                src={item.image}
+                src={resolveMediaUrl(item.image)}
                 alt={item.title}
                 className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500"
                 loading="lazy"
+                onError={(e: any) => {
+                  e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800';
+                }}
               />
 
               {/* Overlay with Title and Category */}
@@ -113,9 +117,12 @@ export const GallerySection: React.FC = () => {
 
               <div className="h-80 sm:h-[450px] bg-black">
                 <img
-                  src={selectedGalleryItem.image}
+                  src={resolveMediaUrl(selectedGalleryItem.image)}
                   alt={selectedGalleryItem.title}
                   className="w-full h-full object-cover"
+                  onError={(e: any) => {
+                    e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800';
+                  }}
                 />
               </div>
 

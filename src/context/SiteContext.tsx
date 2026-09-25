@@ -18,6 +18,7 @@ import { INITIAL_SITE_DATA } from '../data/initialData';
 import { fetchAllDataFromSupabase } from '../services/supabaseService';
 import { getSupabaseClient, isSupabaseConfigured } from '../lib/supabase';
 import { resolveApiUrl } from '../utils/mediaUrl';
+import { REVEG_SYNC_EVENT, REVEG_SYNC_CHANNEL, triggerSiteSync } from '../utils/syncEvent';
 
 export interface PublicSiteData {
   settings: SiteSettings;
@@ -42,6 +43,7 @@ interface SiteContextType {
   isSupabaseActive: boolean;
   refreshData: () => Promise<void>;
   updateSiteData: (updated: Partial<PublicSiteData>) => void;
+  broadcastSync: (source?: string) => void;
   getWhatsAppUrl: (message: string) => string;
   isSectionEnabled: (sectionId: string) => boolean;
 }
@@ -116,34 +118,38 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return null;
       };
 
-      let baseData: PublicSiteData = INITIAL_SITE_DATA;
+      let baseData: PublicSiteData | null = null;
 
-      // 1. Primary Source of Truth: Supabase PostgreSQL (if configured)
-      if (isSupabaseConfigured()) {
-        setIsSupabaseActive(true);
-        baseData = await fetchAllDataFromSupabase();
-      } else {
-        // 2. Secondary: If Express / PHP server has database API running
-        try {
-          const res = await fetch(resolveApiUrl('api/public-content.php'));
-          if (res.ok) {
-            const contentType = res.headers.get('content-type');
-            if (contentType && contentType.includes('application/json')) {
-              baseData = await res.json();
-            }
-          } else {
-            const res2 = await fetch(resolveApiUrl('api/public-content'));
-            if (res2.ok) {
-              const contentType2 = res2.headers.get('content-type');
-              if (contentType2 && contentType2.includes('application/json')) {
-                baseData = await res2.json();
-              }
+      // 1. Primary Source of Truth: Database API (PHP on Apache or Express server)
+      try {
+        let res = await fetch(resolveApiUrl('api/public-content.php'));
+        if (!res.ok) {
+          res = await fetch(resolveApiUrl('api/public-content'));
+        }
+        if (res.ok) {
+          const contentType = res.headers.get('content-type');
+          if (contentType && contentType.includes('application/json')) {
+            const json = await res.json();
+            if (json && (json.products || json.settings)) {
+              baseData = json;
             }
           }
-        } catch {
-          // Static mode fallback to initial structured data
-          baseData = INITIAL_SITE_DATA;
         }
+      } catch (e) {
+        console.warn('Backend database API notice:', e);
+      }
+
+      // 2. Fallback: Supabase PostgreSQL (if backend was unreachable and Supabase configured)
+      if (!baseData && isSupabaseConfigured()) {
+        try {
+          setIsSupabaseActive(true);
+          baseData = await fetchAllDataFromSupabase();
+        } catch {}
+      }
+
+      // 3. Fallback: Initial structured data
+      if (!baseData) {
+        baseData = INITIAL_SITE_DATA;
       }
 
       // Merge dynamic Hero configuration from backend storage
@@ -180,7 +186,30 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     // Initial fetch
     fetchSiteData(true);
 
-    // 1. Setup Supabase Realtime subscription for instant live events
+    // 1. Setup instant event & BroadcastChannel listeners for 0ms multi-tab and in-app synchronization
+    const handleSyncEvent = () => {
+      fetchSiteData(false);
+    };
+    window.addEventListener(REVEG_SYNC_EVENT, handleSyncEvent);
+
+    let syncChannel: BroadcastChannel | null = null;
+    if (typeof BroadcastChannel !== 'undefined') {
+      try {
+        syncChannel = new BroadcastChannel(REVEG_SYNC_CHANNEL);
+        syncChannel.onmessage = () => {
+          fetchSiteData(false);
+        };
+      } catch {}
+    }
+
+    const handleStorageChange = (e: StorageEvent) => {
+      if (e.key === 'reveg_last_sync_timestamp') {
+        fetchSiteData(false);
+      }
+    };
+    window.addEventListener('storage', handleStorageChange);
+
+    // 2. Setup Supabase Realtime subscription for instant live events
     const client = getSupabaseClient();
     let channel: any = null;
     if (client) {
@@ -192,14 +221,14 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         .subscribe();
     }
 
-    // 2. Periodic polling: every 5 seconds while page/tab is visible
+    // 3. Periodic polling: every 5 seconds while page/tab is visible
     const pollInterval = setInterval(() => {
       if (typeof document !== 'undefined' && document.visibilityState === 'visible') {
         fetchSiteData(false);
       }
     }, 5000);
 
-    // 3. Active tab / Window focus listeners
+    // 4. Active tab / Window focus listeners
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible') {
         fetchSiteData(false);
@@ -214,6 +243,13 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
     window.addEventListener('focus', handleFocus);
 
     return () => {
+      window.removeEventListener(REVEG_SYNC_EVENT, handleSyncEvent);
+      window.removeEventListener('storage', handleStorageChange);
+      if (syncChannel) {
+        try {
+          syncChannel.close();
+        } catch {}
+      }
       if (client && channel) {
         client.removeChannel(channel);
       }
@@ -280,6 +316,7 @@ export const SiteProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isSupabaseActive,
         refreshData: fetchSiteData,
         updateSiteData,
+        broadcastSync: triggerSiteSync,
         getWhatsAppUrl,
         isSectionEnabled,
       }}

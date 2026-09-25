@@ -583,16 +583,29 @@ export const AdminDashboard: React.FC<AdminDashboardProps> = ({ onNavigateTab, o
                 <div key={prod.id} className="py-3 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
                     <img
-                      src={prod.image}
+                      src={resolveMediaUrl(prod.image)}
                       alt={prod.name}
                       className="w-10 h-10 rounded-xl object-cover border border-[#D5E8DA]"
+                      onError={(e: any) => {
+                        e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=100';
+                      }}
                     />
                     <div>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <span className="text-xs font-bold text-[#11311D]">{prod.name}</span>
                         <span className="text-[10px] font-extrabold uppercase px-2 py-0.5 rounded-full bg-[#EBF5EE] text-[#0D5B29]">
                           {prod.category}
                         </span>
+                        {prod.price && (
+                          <span className="text-xs font-bold text-[#E8590C]">
+                            {String(prod.price).startsWith('₹') ? prod.price : `₹${prod.price}`}
+                          </span>
+                        )}
+                        {(prod as any).quantity && (
+                          <span className="text-[10px] text-[#557060] font-medium hidden sm:inline">
+                            • {(prod as any).quantity}
+                          </span>
+                        )}
                       </div>
                       <p className="text-xs text-[#4A6354] line-clamp-1">{prod.description}</p>
                     </div>

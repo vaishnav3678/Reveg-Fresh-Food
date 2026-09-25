@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import {
   ShoppingBag,
   Plus,
@@ -16,11 +16,15 @@ import {
   Scale,
   Save,
   AlertCircle,
+  Upload,
+  Loader2,
 } from 'lucide-react';
 import { useAdminAuth } from '../../context/AdminAuthContext';
 import { ProductItem } from '../../server/db';
 import { useSiteData } from '../../context/SiteContext';
 import { supabaseSaveProduct, supabaseDeleteProduct } from '../../services/supabaseService';
+import { resolveMediaUrl, resolveApiUrl } from '../../utils/mediaUrl';
+import { triggerSiteSync } from '../../utils/syncEvent';
 
 interface AdminProductsProps {
   showToast: (type: 'success' | 'error' | 'info', text: string) => void;
@@ -41,6 +45,58 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingProduct, setEditingProduct] = useState<ProductItem | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+  const [isUploadingImage, setIsUploadingImage] = useState<boolean>(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  const handleImageFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const allowed = ['image/jpeg', 'image/png', 'image/webp', 'image/jpg'];
+    if (!allowed.includes(file.type) && !file.name.match(/\.(jpg|jpeg|png|webp)$/i)) {
+      showToast('error', 'Only JPG, JPEG, PNG, and WEBP formats are supported');
+      return;
+    }
+    if (file.size > 10 * 1024 * 1024) {
+      showToast('error', 'Image size must be less than 10MB');
+      return;
+    }
+
+    try {
+      setIsUploadingImage(true);
+      const uploadFormData = new FormData();
+      uploadFormData.append('image', file);
+      uploadFormData.append('type', 'products');
+
+      let res = await fetch(resolveApiUrl('api/upload-product.php'), {
+        method: 'POST',
+        body: uploadFormData,
+      });
+
+      if (!res.ok) {
+        res = await fetch(resolveApiUrl('api/upload-hero.php'), {
+          method: 'POST',
+          body: uploadFormData,
+        });
+      }
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.url) {
+          setFormData((prev) => ({ ...prev, image: data.url }));
+          showToast('success', 'Product image uploaded successfully');
+          return;
+        }
+      }
+      showToast('error', 'Upload failed. Please check file format.');
+    } catch (err: any) {
+      console.error('Image upload error:', err);
+      showToast('error', 'Failed to upload image to server');
+    } finally {
+      setIsUploadingImage(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  };
 
   // Form State
   const [formData, setFormData] = useState<{
@@ -56,6 +112,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
     tasteProfile: string;
     ingredientsHighlight: string[];
     texture: string;
+    price: string;
+    discountPrice: string;
+    quantity: string;
     priceGuide: string;
     status: 'active' | 'inactive';
   }>({
@@ -71,6 +130,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
     tasteProfile: '',
     ingredientsHighlight: [],
     texture: '',
+    price: '',
+    discountPrice: '',
+    quantity: 'In Stock (Fresh Batches Daily)',
     priceGuide: '',
     status: 'active',
   });
@@ -78,11 +140,28 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
   const [newPackSize, setNewPackSize] = useState('');
   const [newIngredient, setNewIngredient] = useState('');
 
-  useEffect(() => {
+  const loadProducts = React.useCallback(async () => {
+    try {
+      let res = await fetch(resolveApiUrl('api/products.php'));
+      if (!res.ok) {
+        res = await fetch(resolveApiUrl('api/products'));
+      }
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setProducts(data);
+          return;
+        }
+      }
+    } catch {}
     if (siteData?.products) {
       setProducts(siteData.products);
     }
   }, [siteData?.products]);
+
+  useEffect(() => {
+    loadProducts();
+  }, [loadProducts]);
 
   const openAddModal = () => {
     setEditingProduct(null);
@@ -99,6 +178,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
       tasteProfile: '',
       ingredientsHighlight: [],
       texture: '',
+      price: '',
+      discountPrice: '',
+      quantity: 'In Stock (Fresh Batches Daily)',
       priceGuide: '',
       status: 'active',
     });
@@ -120,6 +202,9 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
       tasteProfile: product.tasteProfile || '',
       ingredientsHighlight: product.ingredientsHighlight || [],
       texture: product.texture || '',
+      price: (product as any).price ? String((product as any).price) : '',
+      discountPrice: (product as any).discountPrice ? String((product as any).discountPrice) : '',
+      quantity: (product as any).quantity || 'In Stock (Fresh Batches Daily)',
       priceGuide: product.priceGuide || '',
       status: product.status || 'active',
     });
@@ -159,37 +244,51 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
             sortOrder: products.length + 1,
           };
 
-      // 1. Save permanently to Supabase PostgreSQL
-      const result = await supabaseSaveProduct(prodToSave);
-      if (!result.success) {
-        showToast('error', result.error || 'Failed to save product in Supabase');
-      } else {
-        showToast('success', editingProduct ? 'Product updated successfully' : 'Product added successfully');
-      }
-
-      setIsModalOpen(false);
-
-      // 2. Refresh site context immediately
-      await refreshData();
-
-      // 3. Optional backend sync if server exists
+      // 1. Primary: Save to PHP / Express database
       try {
         if (editingProduct) {
-          await authFetch(`/api/products/${editingProduct.id}`, {
+          const res = await authFetch(`/api/products.php?id=${editingProduct.id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(formData),
           });
+          if (!res.ok) {
+            await authFetch(`/api/products/${editingProduct.id}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(formData),
+            });
+          }
         } else {
-          await authFetch('/api/products', {
+          const res = await authFetch('/api/products.php', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(formData),
           });
+          if (!res.ok) {
+            await authFetch('/api/products', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(formData),
+            });
+          }
         }
-      } catch {
-        // Ignored
+      } catch (err) {
+        console.warn('Backend save notice:', err);
       }
+
+      // 2. Also sync to Supabase if active
+      try {
+        await supabaseSaveProduct(prodToSave);
+      } catch {}
+
+      showToast('success', editingProduct ? 'Product updated successfully' : 'Product added successfully');
+      setIsModalOpen(false);
+
+      // 3. Immediately refresh site context and broadcast sync so changes reflect everywhere
+      await refreshData();
+      await loadProducts();
+      triggerSiteSync('product_saved');
     } catch (err) {
       console.error('Error saving product:', err);
       showToast('error', 'Error saving product');
@@ -202,19 +301,21 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
     if (!window.confirm(`Are you sure you want to delete "${name}"?`)) return;
 
     try {
-      const result = await supabaseDeleteProduct(id);
-      if (!result.success) {
-        showToast('error', result.error || 'Failed to delete product in Supabase');
-      } else {
-        showToast('success', `"${name}" removed from catalogue`);
-      }
-      await refreshData();
+      try {
+        const res = await authFetch(`/api/products.php?id=${id}&action=delete`, { method: 'POST' });
+        if (!res.ok) {
+          await authFetch(`/api/products/${id}`, { method: 'DELETE' });
+        }
+      } catch {}
 
       try {
-        await authFetch(`/api/products/${id}`, { method: 'DELETE' });
-      } catch {
-        // Ignored
-      }
+        await supabaseDeleteProduct(id);
+      } catch {}
+
+      showToast('success', `"${name}" removed from catalogue`);
+      await refreshData();
+      await loadProducts();
+      triggerSiteSync('product_deleted');
     } catch (err) {
       showToast('error', 'Error deleting product');
     }
@@ -224,21 +325,29 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
     const nextStatus = product.status === 'active' ? 'inactive' : 'active';
     try {
       const updated = { ...product, status: nextStatus as 'active' | 'inactive' };
-      const res = await supabaseSaveProduct(updated);
-      if (res.success) {
-        showToast('info', `${product.name} is now ${nextStatus}`);
-      }
-      await refreshData();
-
       try {
-        await authFetch(`/api/products/${product.id}`, {
+        const res = await authFetch(`/api/products.php?id=${product.id}`, {
           method: 'PUT',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ status: nextStatus }),
         });
-      } catch {
-        // Ignored
-      }
+        if (!res.ok) {
+          await authFetch(`/api/products/${product.id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ status: nextStatus }),
+          });
+        }
+      } catch {}
+
+      try {
+        await supabaseSaveProduct(updated);
+      } catch {}
+
+      showToast('info', `${product.name} is now ${nextStatus}`);
+      await refreshData();
+      await loadProducts();
+      triggerSiteSync('product_status');
     } catch (err) {
       showToast('error', 'Failed to update status');
     }
@@ -376,6 +485,7 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
                 <tr>
                   <th className="py-3.5 px-4 sm:px-6">Product</th>
                   <th className="py-3.5 px-4">Category</th>
+                  <th className="py-3.5 px-4">Price & Stock</th>
                   <th className="py-3.5 px-4">Pack Sizes</th>
                   <th className="py-3.5 px-4">Badges</th>
                   <th className="py-3.5 px-4">Status</th>
@@ -390,9 +500,12 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
                     <td className="py-3.5 px-4 sm:px-6">
                       <div className="flex items-center gap-3">
                         <img
-                          src={product.image}
+                          src={resolveMediaUrl(product.image)}
                           alt={product.name}
                           className="w-12 h-12 rounded-xl object-cover border border-[#D5E8DA] shrink-0"
+                          onError={(e: any) => {
+                            e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=100';
+                          }}
                         />
                         <div>
                           <span className="font-bold text-sm text-[#11311D] block">
@@ -409,6 +522,23 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
                     <td className="py-3.5 px-4">
                       <span className="capitalize font-semibold text-[#0D5B29] bg-[#EBF5EE] px-2.5 py-1 rounded-lg">
                         {product.category}
+                      </span>
+                    </td>
+
+                    {/* Price & Stock */}
+                    <td className="py-3.5 px-4">
+                      <div className="font-bold text-[#11311D]">
+                        {(product as any).price
+                          ? (String((product as any).price).startsWith('₹') ? (product as any).price : `₹${(product as any).price}`)
+                          : (product as any).priceGuide || 'On Enquiry'}
+                      </div>
+                      {(product as any).discountPrice && (
+                        <div className="text-[10px] line-through text-gray-400 font-medium">
+                          {String((product as any).discountPrice).startsWith('₹') ? (product as any).discountPrice : `₹${(product as any).discountPrice}`}
+                        </div>
+                      )}
+                      <span className="text-[10px] text-[#557060] font-medium block">
+                        {(product as any).quantity || 'In Stock'}
                       </span>
                     </td>
 
@@ -552,27 +682,147 @@ export const AdminProducts: React.FC<AdminProductsProps> = ({ showToast }) => {
                 </div>
               </div>
 
-              {/* Image URL & Preview */}
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-[#0D5B29] mb-1">
-                  Product Image URL *
-                </label>
-                <div className="flex gap-3 items-center">
+              {/* Product Pricing & Stock Information */}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#FAF8F2] p-4 rounded-2xl border border-[#D5E8DA]">
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0D5B29] mb-1">
+                    Selling Price (₹)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.price}
+                    onChange={(e) => setFormData({ ...formData, price: e.target.value })}
+                    placeholder="e.g. 240 or ₹240"
+                    className="w-full text-xs p-2.5 rounded-xl bg-white border border-[#D5E8DA] text-[#11311D] focus:outline-none focus:border-[#0D5B29]"
+                  />
+                  <span className="text-[10px] text-[#557060]">Displayed to customers</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0D5B29] mb-1">
+                    Discount / Original Price (₹)
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.discountPrice}
+                    onChange={(e) => setFormData({ ...formData, discountPrice: e.target.value })}
+                    placeholder="e.g. 280 (strikethrough)"
+                    className="w-full text-xs p-2.5 rounded-xl bg-white border border-[#D5E8DA] text-[#11311D] focus:outline-none focus:border-[#0D5B29]"
+                  />
+                  <span className="text-[10px] text-[#557060]">Optional strikethrough</span>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0D5B29] mb-1">
+                    Stock / Quantity Status
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.quantity}
+                    onChange={(e) => setFormData({ ...formData, quantity: e.target.value })}
+                    placeholder="e.g. In Stock (Fresh Daily)"
+                    className="w-full text-xs p-2.5 rounded-xl bg-white border border-[#D5E8DA] text-[#11311D] focus:outline-none focus:border-[#0D5B29]"
+                  />
+                  <span className="text-[10px] text-[#557060]">Inventory availability</span>
+                </div>
+              </div>
+
+              {/* Product Image Management: Upload, Replace, Delete, Preview */}
+              <div className="space-y-3 bg-[#FAF8F2] p-4 rounded-2xl border border-[#D5E8DA]">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-bold uppercase tracking-wider text-[#0D5B29]">
+                    Product Image (Dynamic & Managed) *
+                  </label>
+                  <span className="text-[10px] text-[#557060]">Supports JPG, PNG, WEBP (Max 10MB)</span>
+                </div>
+
+                {/* Preview Box & Image Actions */}
+                <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
+                  <div className="relative w-24 h-24 rounded-2xl overflow-hidden border-2 border-[#D5E8DA] shadow-sm bg-white shrink-0 group">
+                    <img
+                      src={resolveMediaUrl(formData.image)}
+                      alt="Product Preview"
+                      className="w-full h-full object-cover"
+                      onError={(e: any) => {
+                        e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=200';
+                      }}
+                    />
+                    <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center text-white text-[10px] font-bold">
+                      Preview
+                    </div>
+                  </div>
+
+                  <div className="flex-1 space-y-2 w-full">
+                    {/* Action Buttons: Upload, Replace, Delete */}
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleImageFileUpload}
+                      accept="image/jpeg,image/png,image/webp,image/jpg"
+                      className="hidden"
+                    />
+
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        disabled={isUploadingImage}
+                        className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-[#0D5B29] text-white text-xs font-semibold hover:bg-[#083E1B] transition-colors disabled:opacity-50 shadow-sm"
+                      >
+                        {isUploadingImage ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                            <span>Uploading...</span>
+                          </>
+                        ) : formData.image && formData.image !== 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800&auto=format&fit=crop&q=80' ? (
+                          <>
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Replace Image</span>
+                          </>
+                        ) : (
+                          <>
+                            <Upload className="w-3.5 h-3.5" />
+                            <span>Upload Image</span>
+                          </>
+                        )}
+                      </button>
+
+                      {formData.image && formData.image !== 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800&auto=format&fit=crop&q=80' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              image: 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=800&auto=format&fit=crop&q=80',
+                            }));
+                            showToast('info', 'Product image reset to default delicacy visual');
+                          }}
+                          className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-50 text-red-700 border border-red-200 text-xs font-semibold hover:bg-red-100 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5 text-red-600" />
+                          <span>Delete / Reset Image</span>
+                        </button>
+                      )}
+                    </div>
+
+                    <div className="text-[11px] text-[#557060]">
+                      Current Path: <code className="bg-white px-2 py-0.5 rounded border border-[#D5E8DA] text-[#11311D] text-[10px] break-all">{formData.image || '(No image)'}</code>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Direct Path or URL Edit */}
+                <div>
+                  <label className="block text-[11px] font-semibold text-[#4A6354] mb-1">
+                    Or edit direct path / CDN URL:
+                  </label>
                   <input
                     type="text"
                     required
                     value={formData.image}
                     onChange={(e) => setFormData({ ...formData, image: e.target.value })}
-                    placeholder="https://... or /uploads/..."
-                    className="w-full text-xs p-3 rounded-xl bg-[#FAF8F2] border border-[#D5E8DA] text-[#11311D]"
-                  />
-                  <img
-                    src={formData.image}
-                    alt="Preview"
-                    className="w-11 h-11 rounded-xl object-cover border border-[#D5E8DA] shrink-0"
-                    onError={(e: any) => {
-                      e.target.src = 'https://images.unsplash.com/photo-1599488615731-7e5c2823ff28?w=100';
-                    }}
+                    placeholder="uploads/products/... or https://..."
+                    className="w-full text-xs p-2.5 rounded-xl bg-white border border-[#D5E8DA] text-[#11311D] focus:outline-none focus:border-[#0D5B29]"
                   />
                 </div>
               </div>

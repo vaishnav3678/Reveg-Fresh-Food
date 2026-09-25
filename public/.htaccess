@@ -8,7 +8,7 @@
 <IfModule mod_rewrite.c>
   RewriteEngine On
 
-  # Ensure Authorization header is passed to PHP
+  # Ensure Authorization header is passed to PHP scripts
   RewriteRule .* - [E=HTTP_AUTHORIZATION:%{HTTP:Authorization}]
 
   # If the requested file or directory exists, serve it directly (images, css, js, php)
@@ -16,7 +16,16 @@
   RewriteCond %{REQUEST_FILENAME} -d
   RewriteRule ^ - [L]
 
-  # For SPA routing (e.g. /admin, /products, etc.), fallback to index.html
+  # Route api/<endpoint> to api/<endpoint>.php if it exists
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME}.php -f
+  RewriteRule ^api/(.*)$ api/$1.php [L,QSA]
+
+  # Route api sub-paths (e.g. api/products/123 or api/inquiries/123/status) to api/index.php
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteRule ^api/(.*)$ api/index.php [L,QSA]
+
+  # For SPA routing (e.g. /admin, /festive-specials, etc.), fallback to index.html
   RewriteRule ^ index.html [L]
 </IfModule>
 
@@ -74,7 +83,7 @@
     Header set Cache-Control "public, max-age=31536000, immutable"
   </FilesMatch>
 
-  # Uploaded hero images: cache with revalidation
+  # Uploaded images: cache with revalidation
   <FilesMatch "\.(webp|png|jpg|jpeg)$">
     Header set Cache-Control "public, max-age=86400, must-revalidate"
   </FilesMatch>
